@@ -42,6 +42,7 @@ import {
 } from "./board";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { saveTextFile, savesAsDownload } from "./files";
+import { buildStandaloneHtml } from "./htmlExport";
 import {
   FLOWAPI_EXTENSION,
   parseProjectFile,
@@ -274,7 +275,7 @@ export const FlowApiShell = ({
         text,
         `${base}.${FLOWAPI_EXTENSION}`,
         "application/json",
-        "FlowAPI project",
+        S.fileTypeProject,
         store.fileHandle,
       );
       store.fileHandle = handle || null;
@@ -294,11 +295,37 @@ export const FlowApiShell = ({
     }
   }, [excalidrawAPI, store, toast]);
 
+  const exportHtml = useCallback(async () => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const base = store.fileBaseName();
+    const download = savesAsDownload();
+    try {
+      const html = await buildStandaloneHtml({
+        name: base,
+        project: store.getState().project,
+        elements: excalidrawAPI.getSceneElements(),
+        appState: excalidrawAPI.getAppState(),
+        files: excalidrawAPI.getFiles(),
+      });
+      const fileName = `${base}.html`;
+      await saveTextFile(html, fileName, "text/html", S.fileTypeHtml);
+      toast(
+        `${S.htmlExported(fileName)}${download ? `\n${S.downloadNote}` : ""}`,
+      );
+    } catch (e) {
+      if (!isAbort(e)) {
+        toast((e as Error).message);
+      }
+    }
+  }, [excalidrawAPI, store, toast]);
+
   const openProject = useCallback(async () => {
     try {
       const file = await fileOpen({
         extensions: [`.${FLOWAPI_EXTENSION}`],
-        description: "FlowAPI project",
+        description: S.fileTypeProject,
       });
       await openProjectFile(file);
     } catch (e) {
@@ -376,7 +403,7 @@ export const FlowApiShell = ({
         file.text,
         file.name,
         mime,
-        isFlow ? "Mermaid flow" : "OpenAPI spec",
+        isFlow ? S.fileTypeFlow : S.fileTypeSpec,
       );
       toast(`${S.exported(file.name)}${download ? `\n${S.downloadNote}` : ""}`);
     } catch (e) {
@@ -564,6 +591,7 @@ export const FlowApiShell = ({
             nameKeys: (id) => setKeySpecId(id),
             openProject,
             saveProject,
+            exportHtml,
             renameKey: onRenameKey,
             exportFile,
             deleteOperation: (op) => setPendingDelete(op),

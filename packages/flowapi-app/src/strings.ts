@@ -120,6 +120,18 @@ export const S = {
   unlink: "Unlink",
   arrowBroken: (key: string) => `@api ${key} matches no operation`,
   exportHtml: "Export standalone HTML…",
+  exportHtmlButton: "HTML",
+  fileTypeProject: "FlowAPI project",
+  fileTypeHtml: "HTML page",
+  fileTypeFlow: "Mermaid flow",
+  fileTypeSpec: "OpenAPI spec",
+  exportHtmlHint:
+    "Export a standalone HTML page of the board that opens without the app",
+  htmlHint:
+    "Scroll to zoom, drag to move. Click a linked arrow to jump to its operation.",
+  htmlShowAll: "Show all",
+  htmlSources: "Source files",
+  htmlEmpty: "The board is empty, so there is nothing to export.",
   exportMenu: "Export",
   htmlTitle: (name: string) => `${name} · FlowAPI`,
   htmlExported: (name: string) => `Exported ${name}`,

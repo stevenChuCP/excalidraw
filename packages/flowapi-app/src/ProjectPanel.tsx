@@ -30,6 +30,7 @@ export type PanelActions = {
   nameKeys: (specId: string) => void;
   openProject?: () => void;
   saveProject?: () => void;
+  exportHtml?: () => void;
   /** returns an error to show, or null when the key was renamed */
   renameKey?: (op: Operation, newKey: string) => string | null;
   openFile?: (fileId: string) => void;
@@ -169,6 +170,17 @@ export const ProjectPanel = ({
               title={S.saveProjectHint}
             >
               {S.saveProject}
+            </button>
+          )}
+          {actions.exportHtml && (
+            <button
+              type="button"
+              className="flowapi-btn flowapi-btn--small"
+              onClick={actions.exportHtml}
+              data-testid="flowapi-export-html"
+              title={S.exportHtmlHint}
+            >
+              {S.exportHtmlButton}
             </button>
           )}
           <button
