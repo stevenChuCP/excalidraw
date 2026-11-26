@@ -41,3 +41,10 @@ Rules:
 - **Why:** after collaboration and share links went, nothing used it, and the app must not talk to upstream servers.
 - **What went:** the Firebase SDK (`firebase` package), the storage helpers, their test, and the `VITE_APP_FIREBASE_CONFIG` setting (which held upstream project keys).
 - **Files:** `excalidraw-app/data/firebase.ts`, `data/firebaseSDK.ts`, `tests/firebase.test.ts` deleted; `app_constants.ts`, `vite-env.d.ts`, `vite.config.mts`, `.env.*`, `package.json`, `yarn.lock` edited.
+
+## Analytics and error reporting (Simple Analytics, Sentry)
+
+- **Why:** local-first; no usage or crash data leaves the browser.
+- **What went:** the Simple Analytics script in `index.html`, the app's load events, tracking turned on in builds and in development, Sentry (`@sentry/browser`, `callsites`) and its error reporting, and the error screen's "open a GitHub issue" link to the upstream bug tracker. The error screen still offers reload, clear canvas, and the scene content to copy.
+- **Files:** `excalidraw-app/sentry.ts`, `bug-issue-template.js` deleted; `index.tsx`, `index.html`, `App.tsx`, `components/TopErrorBoundary.tsx`, `vite-env.d.ts`, `package.json` (both), `.env.development`, `yarn.lock` edited.
+- **Note:** the library's `trackEvent` stays, and does nothing because `VITE_APP_ENABLE_TRACKING` is never `true`.
