@@ -333,12 +333,13 @@ const ExcalidrawWrapper = () => {
       }
     };
 
-    window.addEventListener(EVENT.UNLOAD, onUnload, false);
+    // flowapi: `pagehide` instead of the blocked `unload`
+    window.addEventListener(EVENT.PAGEHIDE, onUnload, false);
     window.addEventListener(EVENT.BLUR, visibilityChange, false);
     document.addEventListener(EVENT.VISIBILITY_CHANGE, visibilityChange, false);
     window.addEventListener(EVENT.FOCUS, visibilityChange, false);
     return () => {
-      window.removeEventListener(EVENT.UNLOAD, onUnload, false);
+      window.removeEventListener(EVENT.PAGEHIDE, onUnload, false);
       window.removeEventListener(EVENT.BLUR, visibilityChange, false);
       window.removeEventListener(EVENT.FOCUS, visibilityChange, false);
       document.removeEventListener(

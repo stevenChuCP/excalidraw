@@ -73,6 +73,8 @@ export enum EVENT {
   MOUSE_MOVE = "mousemove",
   RESIZE = "resize",
   UNLOAD = "unload",
+  // flowapi: Chrome blocks `unload` listeners; `pagehide` is the replacement
+  PAGEHIDE = "pagehide",
   FOCUS = "focus",
   BLUR = "blur",
   DRAG_OVER = "dragover",

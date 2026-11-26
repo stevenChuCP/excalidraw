@@ -4241,7 +4241,8 @@ class App extends React.Component<AppProps, AppState> {
         passive: false,
       }),
       addEventListener(this.ownerWindow, EVENT.RESIZE, this.onResize, false),
-      addEventListener(this.ownerWindow, EVENT.UNLOAD, this.onUnload, false),
+      // flowapi: `pagehide` instead of the blocked `unload`
+      addEventListener(this.ownerWindow, EVENT.PAGEHIDE, this.onUnload, false),
       addEventListener(this.ownerWindow, EVENT.BLUR, this.onBlur, false),
       addEventListener(
         this.excalidrawContainerRef.current,
