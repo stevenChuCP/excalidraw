@@ -1,0 +1,9 @@
+{
+  "name": "@flowapi/app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FlowAPI app layer: project sidebar, Checks panel, flow layout on the canvas",
+  "type": "module",
+  "main": "./src/index.ts",
+  "license": "MIT"
+}

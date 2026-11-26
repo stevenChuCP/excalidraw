@@ -209,6 +209,20 @@ export default defineConfig(({ mode }) => {
         },
         // flowapi: our own packages
         {
+          find: /^@flowapi\/app$/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/flowapi-app/src/index.ts",
+          ),
+        },
+        {
+          find: /^@flowapi\/app\/(.*?)/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/flowapi-app/src/$1",
+          ),
+        },
+        {
           find: /^@flowapi\/core$/,
           replacement: path.resolve(
             __dirname,
