@@ -34,7 +34,9 @@
       "@excalidraw/math": ["./packages/math/src/index.ts"],
       "@excalidraw/math/*": ["./packages/math/src/*"],
       "@excalidraw/utils": ["./packages/utils/src/index.ts"],
-      "@excalidraw/utils/*": ["./packages/utils/src/*"]
+      "@excalidraw/utils/*": ["./packages/utils/src/*"],
+      "@flowapi/card": ["./packages/flowapi-card/src/index.ts"],
+      "@flowapi/card/*": ["./packages/flowapi-card/src/*"]
     }
   },
   "include": ["packages", "excalidraw-app"],

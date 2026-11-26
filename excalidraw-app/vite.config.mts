@@ -207,6 +207,21 @@ export default defineConfig(({ mode }) => {
           find: /^@excalidraw\/utils\/(.*?)/,
           replacement: path.resolve(__dirname, "../packages/utils/src/$1"),
         },
+        // flowapi: our own packages
+        {
+          find: /^@flowapi\/card$/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/flowapi-card/src/index.ts",
+          ),
+        },
+        {
+          find: /^@flowapi\/card\/(.*?)/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/flowapi-card/src/$1",
+          ),
+        },
         {
           find: /^@excalidraw\/fractional-indexing$/,
           replacement: path.resolve(

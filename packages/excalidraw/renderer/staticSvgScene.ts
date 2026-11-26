@@ -46,6 +46,9 @@ import {
 
 import { getElementAbsoluteCoords } from "@excalidraw/element";
 
+// flowapi: API card drawing
+import { appendApiCardToSvg, isApiCardElement } from "@flowapi/card";
+
 import type {
   ExcalidrawElement,
   ExcalidrawTextElementWithContainer,
@@ -292,6 +295,14 @@ const renderElementToSvg = (
           offsetY || 0
         }) rotate(${degree} ${cx} ${cy})`,
       );
+
+      // flowapi: API cards are rectangles with content drawn on top
+      if (element.type === "rectangle" && isApiCardElement(element)) {
+        appendApiCardToSvg(node, element, {
+          mapColor: (color) =>
+            applyDarkModeFilter(color, renderConfig.theme === THEME.DARK),
+        });
+      }
 
       const g = maybeWrapNodesInFrameClipPath(
         element,

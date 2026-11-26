@@ -36,6 +36,7 @@ import {
 import { newElementWith } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
 import { useHandleLibrary } from "@excalidraw/excalidraw/data/library";
+import { createApiCardElement } from "@flowapi/card/create";
 
 import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type {
@@ -636,6 +637,42 @@ const ExcalidrawWrapper = () => {
                   "_blank",
                   "noopener noreferrer",
                 );
+              },
+            },
+            // flowapi: M0 spike, puts a sample API card at the viewport center
+            {
+              label: "Insert test API card",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: true,
+              keywords: ["flowapi", "api", "card", "spike", "test"],
+              perform: () => {
+                if (!excalidrawAPI) {
+                  return;
+                }
+                const { scrollX, scrollY, zoom, width, height } =
+                  excalidrawAPI.getAppState();
+                const card = createApiCardElement(
+                  {
+                    specId: "s-kx-sign",
+                    key: "A1",
+                    method: "POST",
+                    path: "/v1/sign-requests",
+                    operationId: "createSignRequest",
+                    summary: "Create a sign request for a document",
+                  },
+                  {
+                    x: width / 2 / zoom.value - scrollX - 150,
+                    y: height / 2 / zoom.value - scrollY - 52,
+                  },
+                );
+                excalidrawAPI.updateScene({
+                  elements: [
+                    ...excalidrawAPI.getSceneElementsIncludingDeleted(),
+                    card,
+                  ],
+                  appState: { selectedElementIds: { [card.id]: true } },
+                  captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+                });
               },
             },
             {

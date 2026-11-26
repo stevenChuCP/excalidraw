@@ -1,0 +1,9 @@
+{
+  "name": "@flowapi/card",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FlowAPI API card: data shape and drawing for canvas and SVG export",
+  "type": "module",
+  "main": "./src/index.ts",
+  "license": "MIT"
+}
