@@ -14,12 +14,16 @@ const ORDER: IssueLevel[] = [
 export const linkCount = (model: ProjectModel) =>
   Object.values(model.links).reduce((n, l) => n + Object.keys(l).length, 0);
 
+/** the Checks tab: findings grouped like today's viewer; click one to open its line */
 export const ChecksPanel = ({
   model,
-  onClose,
+  onIssueClick,
+  renderFix,
 }: {
   model: ProjectModel;
-  onClose: () => void;
+  onIssueClick?: (issue: Issue) => void;
+  /** a one-click fix button for an issue, when there is one */
+  renderFix?: (issue: Issue) => React.ReactNode;
 }) => {
   const files = new Map(
     [...model.project.flows, ...model.project.specs].map((f) => [f.id, f.name]),
@@ -38,17 +42,6 @@ export const ChecksPanel = ({
 
   return (
     <div className="flowapi-checks" data-testid="flowapi-checks">
-      <div className="flowapi-checks__head">
-        <span className="flowapi-panel__title">{S.checksTitle}</span>
-        <button
-          type="button"
-          className="flowapi-x"
-          title={S.close}
-          onClick={onClose}
-        >
-          ×
-        </button>
-      </div>
       <div className="flowapi-muted" data-testid="flowapi-checks-summary">
         {S.summary(model.flows.length, model.specs.length, linkCount(model))}
       </div>
@@ -64,12 +57,28 @@ export const ChecksPanel = ({
             <span className="flowapi-muted">{g.issues.length}</span>
           </h4>
           <ul>
-            {g.issues.map((i, n) => (
-              <li key={n} data-testid="flowapi-issue">
-                <span>{i.message}</span>
-                {where(i) && <span className="flowapi-where">{where(i)}</span>}
-              </li>
-            ))}
+            {g.issues.map((i, n) => {
+              const clickable = !!(
+                onIssueClick &&
+                i.fileId &&
+                files.has(i.fileId)
+              );
+              return (
+                <li
+                  key={n}
+                  data-testid="flowapi-issue"
+                  className={clickable ? "flowapi-issue--link" : undefined}
+                  onClick={clickable ? () => onIssueClick!(i) : undefined}
+                  title={clickable ? S.openAtLine : undefined}
+                >
+                  <span>{i.message}</span>
+                  {where(i) && (
+                    <span className="flowapi-where">{where(i)}</span>
+                  )}
+                  {renderFix?.(i)}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ))}
