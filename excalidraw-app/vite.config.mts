@@ -207,6 +207,21 @@ export default defineConfig(({ mode }) => {
           find: /^@excalidraw\/utils\/(.*?)/,
           replacement: path.resolve(__dirname, "../packages/utils/src/$1"),
         },
+        // flowapi: our own packages
+        {
+          find: /^@flowapi\/card$/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/flowapi-card/src/index.ts",
+          ),
+        },
+        {
+          find: /^@flowapi\/card\/(.*?)/,
+          replacement: path.resolve(
+            __dirname,
+            "../packages/flowapi-card/src/$1",
+          ),
+        },
         {
           find: /^@excalidraw\/fractional-indexing$/,
           replacement: path.resolve(
@@ -330,9 +345,6 @@ export default defineConfig(({ mode }) => {
             // via a static import from the main bundle, defeating lazy
             // loading. So we exclude it by name instead.
             "**/CodeMirrorEditor-*.js",
-            // lazy-loaded Firebase SDK, only needed for collab/sharing, which
-            // require network anyway
-            "**/firebaseSDK-*.js",
           ],
           // mermaid chunks are excluded here rather than via `globIgnores`
           // as their file names are arbitrary

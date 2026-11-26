@@ -32,6 +32,9 @@ import {
   DEFAULT_ZOOM,
 } from "@excalidraw/common";
 
+// flowapi: API card drawing
+import { drawApiCardOnCanvas, isApiCardElement } from "@flowapi/card";
+
 import type {
   AppState,
   StaticCanvasAppState,
@@ -507,6 +510,13 @@ const drawElementOnCanvas = (
       context.lineCap = "round";
 
       rc.draw(ShapeCache.generateElementShape(element, renderConfig));
+      // flowapi: API cards are rectangles with content drawn on top
+      if (element.type === "rectangle" && isApiCardElement(element)) {
+        drawApiCardOnCanvas(context, element, {
+          mapColor: (color) =>
+            applyDarkModeFilter(color, renderConfig.theme === THEME.DARK),
+        });
+      }
       break;
     }
     case "arrow":
