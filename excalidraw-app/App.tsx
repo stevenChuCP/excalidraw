@@ -1,7 +1,6 @@
 import {
   Excalidraw,
   LiveCollaborationTrigger,
-  TTDDialogTrigger,
   CaptureUpdateAction,
   reconcileElements,
   useEditorInterface,
@@ -134,7 +133,6 @@ import DebugCanvas, {
   loadSavedDebugState,
 } from "./components/DebugCanvas";
 import { useSimulatedCollaborators } from "./debugCollaborators";
-import { AIComponents } from "./components/AI";
 
 import "./index.scss";
 
@@ -929,6 +927,8 @@ const ExcalidrawWrapper = () => {
         langCode={langCode}
         renderCustomStats={renderCustomStats}
         detectScroll={false}
+        // flowapi: AI features are removed (see REMOVED.md)
+        aiEnabled={false}
         handleKeyboardGlobally={true}
         autoFocus={true}
         theme={editorTheme}
@@ -978,9 +978,6 @@ const ExcalidrawWrapper = () => {
           <OverwriteConfirmDialog.Actions.SaveToDisk />
         </OverwriteConfirmDialog>
         <AppFooter onChange={() => excalidrawAPI?.refresh()} />
-        {excalidrawAPI && <AIComponents excalidrawAPI={excalidrawAPI} />}
-
-        <TTDDialogTrigger />
         {isCollaborating && isOffline && (
           <div className="alertalert--warning">
             {t("alerts.collabOfflineWarning")}
