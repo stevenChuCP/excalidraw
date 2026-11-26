@@ -20,7 +20,7 @@ Rules:
 
 - **Why:** no AI features for now (decided 2026-11-25); they also send drawings to an upstream backend.
 - **What went:** the Text to diagram dialog and its chat history store, the Wireframe to code (diagram-to-code) frame tool, the toolbar and command palette entries for both, and the `VITE_APP_AI_BACKEND` / `VITE_APP_PLUS_LP` settings. The app passes `aiEnabled={false}` to the editor, which hides every AI entry point in the library.
-- **Side effect:** the library's Mermaid to Excalidraw tab lives in the same dialog, so it is hidden too. FlowAPI reads Mermaid itself, so nothing is lost; the tab can come back without AI if we want it.
+- **Kept:** Mermaid to Excalidraw (toolbar, More tools) still works; it runs locally and is not AI. Its command palette entry is hidden, because the library ties that entry to `aiEnabled`.
 - **Files:** `excalidraw-app/components/AI.tsx` and `data/TTDStorage.ts` deleted (`data/cacheMermaidChunks.ts` stays, the build uses it); `App.tsx`, `vite-env.d.ts`, `.env.*` edited.
 
 ## Live collaboration
