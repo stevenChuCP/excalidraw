@@ -297,3 +297,23 @@ describe("M1-04: Checks match today's viewer", () => {
     });
   }
 });
+
+describe("flows without an @oai-doc line", () => {
+  it("M1-09 with several specs: links to the spec that knows the old tags", () => {
+    const project = projectOf("kx-sign-flow.mmd", "kx-sign-openapi.yaml");
+    const withOthers = importFiles(project, [
+      { name: "ca-openapi.yaml", text: read("ca-openapi.yaml") },
+      { name: "kx-sign-openapi.yaml", text: read("kx-sign-openapi.yaml") },
+    ]).project;
+    // [ca, kx, kx-2]: order alone would pick ca, and kx-2 knows the same tags
+    const [kx, ca, kxCopy] = withOthers.specs;
+    withOthers.specs = [ca, kx, kxCopy];
+    const model = buildProjectModel(withOthers);
+    const flow = model.flows[0];
+    const links = Object.values(model.links[flow.id]);
+    expect(links.length).toBeGreaterThanOrEqual(11);
+    expect(new Set(links.map((l) => l.specId))).toEqual(
+      new Set(["s-kx-sign-openapi"]),
+    );
+  });
+});

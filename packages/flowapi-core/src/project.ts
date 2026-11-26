@@ -91,8 +91,25 @@ export const buildProjectModel = (project: Project): ProjectModel => {
         docSpec.set(doc.alias.toLowerCase(), spec);
       }
     });
-    if (!flow.oaiDocs.length && specs.length === 1) {
-      docSpec.set(null, specs[0]);
+    if (!flow.oaiDocs.length && specs.length) {
+      // no @oai-doc line: use the spec that knows most of the flow's old
+      // [A1] tags (the first imported wins a tie, so copies like
+      // name-2.yaml lose to the original), or the only spec there is
+      const tags = flow.messages
+        .map((m) => m.legacyKey)
+        .filter((k): k is string => !!k);
+      let best: SpecModel | null = specs.length === 1 ? specs[0] : null;
+      let bestScore = 0;
+      for (const spec of specs) {
+        const score = tags.filter((k) => findByKey(spec, k).length).length;
+        if (score > bestScore) {
+          best = spec;
+          bestScore = score;
+        }
+      }
+      if (best) {
+        docSpec.set(null, best);
+      }
     }
     const flowSpecs = [...new Set([...docSpec.values()])].filter(
       (s): s is SpecModel => !!s,
