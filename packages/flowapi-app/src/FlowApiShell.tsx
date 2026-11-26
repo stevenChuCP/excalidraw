@@ -41,6 +41,8 @@ import {
   serializeProject,
 } from "./projectFile";
 import { ChecksPanel } from "./ChecksPanel";
+import { SidePanel } from "./SidePanel";
+import { TextEditor } from "./TextEditor";
 import { KeyPatternDialog } from "./KeyPatternDialog";
 import { FLOWAPI_DRAG_MIME, ProjectPanel } from "./ProjectPanel";
 import { ProjectStore } from "./store";
@@ -48,7 +50,7 @@ import { S } from "./strings";
 
 import "./flowapi.scss";
 
-import type { KeyPattern, Operation } from "@flowapi/core";
+import type { Issue, KeyPattern, Operation } from "@flowapi/core";
 
 import type { ProjectFile } from "./projectFile";
 
@@ -77,7 +79,43 @@ export const FlowApiShell = ({
     store.subscribe,
     store.getState,
   );
-  const [checksOpen, setChecksOpen] = useState(false);
+  const [sideOpen, setSideOpen] = useState(false);
+  const [tabs, setTabs] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<string>("checks");
+  const [jump, setJump] = useState<{
+    fileId: string;
+    line: number;
+    n: number;
+  } | null>(null);
+  const checksOpen = sideOpen && activeTab === "checks";
+
+  const toggleChecks = () => {
+    if (checksOpen) {
+      setSideOpen(false);
+    } else {
+      setActiveTab("checks");
+      setSideOpen(true);
+    }
+  };
+  const openFile = (fileId: string, line?: number) => {
+    setTabs((t) => (t.includes(fileId) ? t : [...t, fileId]));
+    setActiveTab(fileId);
+    setSideOpen(true);
+    if (line) {
+      setJump((j) => ({ fileId, line, n: (j?.n || 0) + 1 }));
+    }
+  };
+  const closeTab = (fileId: string) => {
+    setTabs((t) => t.filter((x) => x !== fileId));
+    if (activeTab === fileId) {
+      setActiveTab("checks");
+    }
+  };
+  const onIssueClick = (issue: Issue) => {
+    if (issue.fileId) {
+      openFile(issue.fileId, issue.line || 1);
+    }
+  };
   const [keySpecId, setKeySpecId] = useState<string | null>(null);
   const [pendingOpen, setPendingOpen] = useState<ProjectFile | null>(null);
   const [board, setBoard] = useState({
@@ -378,10 +416,15 @@ export const FlowApiShell = ({
           cardsOnBoard={board.cards}
           flowsOnBoard={board.flows}
           checksOpen={checksOpen}
+          activeFileId={sideOpen && activeTab !== "checks" ? activeTab : null}
           actions={{
             addFiles: () => fileInput.current?.click(),
-            removeFile: (id) => store.removeFile(id),
-            toggleChecks: () => setChecksOpen((o) => !o),
+            removeFile: (id) => {
+              closeTab(id);
+              store.removeFile(id);
+            },
+            toggleChecks,
+            openFile: (id) => openFile(id),
             nameKeys: (id) => setKeySpecId(id),
             openProject,
             saveProject,
@@ -410,8 +453,44 @@ export const FlowApiShell = ({
         onDropCapture={onDrop}
       >
         {children}
-        {checksOpen && (
-          <ChecksPanel model={model} onClose={() => setChecksOpen(false)} />
+        {sideOpen && (
+          <SidePanel
+            tabs={[
+              { id: "checks", label: S.checks, testId: "flowapi-tab-checks" },
+              ...tabs
+                .map((id) =>
+                  [...project.flows, ...project.specs].find((f) => f.id === id),
+                )
+                .filter((f): f is NonNullable<typeof f> => !!f)
+                .map((f) => ({
+                  id: f.id,
+                  label: f.name,
+                  testId: "flowapi-tab-file",
+                })),
+            ]}
+            active={activeTab}
+            onSelect={setActiveTab}
+            onCloseTab={closeTab}
+            onClose={() => setSideOpen(false)}
+          >
+            {activeTab === "checks" ? (
+              <ChecksPanel model={model} onIssueClick={onIssueClick} />
+            ) : (
+              (() => {
+                const file = [...project.flows, ...project.specs].find(
+                  (f) => f.id === activeTab,
+                );
+                return file ? (
+                  <TextEditor
+                    key={file.id}
+                    file={file}
+                    onChange={(text) => store.setFileText(file.id, text)}
+                    jump={jump?.fileId === file.id ? jump : null}
+                  />
+                ) : null;
+              })()
+            )}
+          </SidePanel>
         )}
       </div>
       {pendingOpen && (

@@ -185,34 +185,50 @@ export const refreshFlow = (
   const old = new Map(
     all.filter((e) => oldIds.has(e.id)).map((e) => [e.id, e] as const),
   );
+  // the layout origin moves with the frame when the user drags it
+  const [ox, oy] = frame.customData?.flowapi?.originOffset || [0, 0];
+  const origin = { x: frame.x + ox, y: frame.y + oy };
   const fresh = convertToExcalidrawElements(
-    layoutFlow(model, flow, {
-      x: frame.x,
-      y: frame.y,
-      linkTo: linkToElement,
-    }),
+    layoutFlow(model, flow, { ...origin, linkTo: linkToElement }),
     { regenerateIds: false },
   );
   const freshFrame = fresh.find((e) => e.id === frameId)!;
   const prefix = flowElementPrefix(flow.id);
 
-  // how far the user moved each participant
+  /** how far the user moved an element away from where the layout put it */
+  const userDelta = (was: ExcalidrawElement | undefined): Delta | null => {
+    const auto = was?.customData?.flowapi?.auto;
+    if (!was || !Array.isArray(auto)) {
+      return null;
+    }
+    const dx = Math.round(was.x - origin.x) - auto[0];
+    const dy = Math.round(was.y - origin.y) - auto[1];
+    return Math.abs(dx) > 1 || Math.abs(dy) > 1 ? { dx, dy } : null;
+  };
+
+  // participants the user moved sideways take their arrows along
   const partDx = new Map<string, number>();
   for (const el of fresh) {
     if (el.id.startsWith(`${prefix}p:`)) {
-      const was = old.get(el.id);
-      partDx.set(el.id.slice(`${prefix}p:`.length), was ? was.x - el.x : 0);
+      const d = userDelta(old.get(el.id));
+      partDx.set(el.id.slice(`${prefix}p:`.length), d ? d.dx : 0);
     }
   }
 
+  // Elements moved by hand keep their place; untouched ones follow the new
+  // layout, so a message inserted mid-flow pushes the untouched ones below it
+  // down instead of landing on top of them.
   const deltas = new Map<string, Delta>();
-  let lastDy = 0;
   const moved: ExcalidrawElement[] = [];
   for (const el of fresh) {
     if (el.id === frameId || (el.type === "text" && el.containerId)) {
       continue;
     }
+    if (el.id.startsWith(`${prefix}life:`)) {
+      continue; // sized after everything else is placed
+    }
     const was = old.get(el.id);
+    const user = userDelta(was);
     let next: ExcalidrawElement = el;
     if (
       el.type === "arrow" &&
@@ -221,12 +237,12 @@ export const refreshFlow = (
       const { from, to } = el.customData.flowapi;
       const fdx = partDx.get(from) || 0;
       const tdx = partDx.get(to) || 0;
-      const dy = was ? was.y - el.y : lastDy;
-      lastDy = dy;
-      const points = el.points.map((p, i) =>
+      // an arrow keeps a height the user gave it; its ends follow participants
+      const dy = user ? was!.y - el.y : 0;
+      const points = el.points.map((pt, i) =>
         i === el.points.length - 1 && from !== to
-          ? ([p[0] + tdx - fdx, p[1]] as const)
-          : p,
+          ? ([pt[0] + tdx - fdx, pt[1]] as const)
+          : pt,
       );
       next = {
         ...el,
@@ -236,16 +252,10 @@ export const refreshFlow = (
         width: Math.abs(points[points.length - 1][0]) || el.width,
       };
       deltas.set(el.id, { dx: (fdx + tdx) / 2, dy });
-    } else if (el.id.startsWith(`${prefix}life:`)) {
-      // lifelines are sized after everything else is placed
-      continue;
     } else {
-      const d = was
-        ? { dx: was.x - el.x, dy: was.y - el.y }
-        : { dx: 0, dy: el.id.startsWith(`${prefix}p:`) ? 0 : lastDy };
-      if (was && !el.id.startsWith(`${prefix}p:`)) {
-        lastDy = d.dy;
-      }
+      const d = user
+        ? { dx: was!.x - el.x, dy: was!.y - el.y }
+        : { dx: 0, dy: 0 };
       next = { ...el, x: el.x + d.dx, y: el.y + d.dy };
       deltas.set(el.id, d);
     }
@@ -301,7 +311,13 @@ export const refreshFlow = (
     y: minY,
     width: maxX - minX,
     height: maxY - minY,
-    customData: freshFrame.customData,
+    customData: {
+      ...freshFrame.customData,
+      flowapi: {
+        ...freshFrame.customData?.flowapi,
+        originOffset: [origin.x - minX, origin.y - minY],
+      },
+    },
   });
   const others = all.filter((e) => !oldIds.has(e.id) && e.id !== frameId);
   api.updateScene({

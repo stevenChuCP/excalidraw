@@ -16,6 +16,7 @@ import type {
 
 export const FLOW_ARROW_KIND = "flowArrow";
 export const FLOW_FRAME_KIND = "flowFrame";
+export const FLOW_SHAPE_KIND = "flowShape";
 
 export const flowFrameId = (flowId: string) => `flow:${flowId}`;
 export const flowElementPrefix = (flowId: string) => `flow:${flowId}:`;
@@ -394,5 +395,18 @@ export const layoutFlow = (
       },
     },
   };
+  // remember where the layout put each element (relative to the layout
+  // origin), so a redraw can tell elements moved by hand from untouched ones
+  for (const el of out as any[]) {
+    el.customData = {
+      ...el.customData,
+      flowapi: {
+        kind: FLOW_SHAPE_KIND,
+        flowId: flow.id,
+        ...el.customData?.flowapi,
+        auto: [Math.round(el.x - opts.x), Math.round(el.y - opts.y)],
+      },
+    };
+  }
   return [...lifelines, ...rest, frame];
 };

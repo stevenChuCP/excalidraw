@@ -277,19 +277,120 @@
   text-decoration: underline;
 }
 
-.flowapi-checks {
+.flowapi-side {
   position: absolute;
   top: 70px;
   right: 16px;
   bottom: 70px;
-  width: 360px;
+  width: 460px;
+  max-width: calc(100% - 32px);
   z-index: 10;
-  overflow-y: auto;
-  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
   background: var(--fa-bg);
   border: 1px solid var(--fa-border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+
+  &__tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 6px 6px 0;
+    border-bottom: 1px solid var(--fa-border);
+    overflow-x: auto;
+  }
+  &__close {
+    margin-left: auto;
+    align-self: center;
+  }
+  &__body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+.flowapi-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 180px;
+  padding: 5px 8px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  color: var(--fa-muted);
+  white-space: nowrap;
+  &--on {
+    background: var(--fa-bg-2);
+    color: var(--fa-text);
+    box-shadow: inset 0 -2px 0 var(--fa-accent);
+  }
+  &__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  &__x {
+    border: 0;
+    background: none;
+    padding: 0 2px;
+    cursor: pointer;
+    color: var(--fa-muted);
+    font-size: 14px;
+    line-height: 1;
+  }
+}
+
+.flowapi-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  &__gutter {
+    flex: 0 0 auto;
+    min-width: 36px;
+    padding: 8px 6px 8px 0;
+    overflow: hidden;
+    text-align: right;
+    color: var(--fa-muted);
+    background: var(--fa-bg-2);
+    user-select: none;
+    div {
+      height: 18px;
+    }
+  }
+  &__text {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    padding: 8px;
+    border: 0;
+    outline: none;
+    resize: none;
+    background: var(--fa-bg);
+    color: var(--fa-text);
+    font: inherit;
+    line-height: 18px;
+    white-space: pre;
+    tab-size: 2;
+  }
+}
+
+.flowapi-issue--link {
+  cursor: pointer;
+  &:hover {
+    filter: brightness(0.97);
+  }
+}
+
+.flowapi-checks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
 
   &__head {
     display: flex;

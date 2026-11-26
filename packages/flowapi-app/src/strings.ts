@@ -125,4 +125,7 @@ export const S = {
   htmlExported: (name: string) => `Exported ${name}`,
   downloadNote:
     "This browser can't save to a folder, so the file was downloaded.",
+  closeIcon: "×",
+  openAtLine: "Open this line",
+  flowTab: (name: string) => name,
 };
