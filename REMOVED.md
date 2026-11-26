@@ -22,3 +22,10 @@ Rules:
 - **What went:** the Text to diagram dialog and its chat history store, the Wireframe to code (diagram-to-code) frame tool, the toolbar and command palette entries for both, and the `VITE_APP_AI_BACKEND` / `VITE_APP_PLUS_LP` settings. The app passes `aiEnabled={false}` to the editor, which hides every AI entry point in the library.
 - **Side effect:** the library's Mermaid to Excalidraw tab lives in the same dialog, so it is hidden too. FlowAPI reads Mermaid itself, so nothing is lost; the tab can come back without AI if we want it.
 - **Files:** `excalidraw-app/components/AI.tsx` and `data/TTDStorage.ts` deleted (`data/cacheMermaidChunks.ts` stays, the build uses it); `App.tsx`, `vite-env.d.ts`, `.env.*` edited.
+
+## Live collaboration
+
+- **Why:** FlowAPI is local-first and single-user for now. Collaboration needs the upstream room server and Firebase scene storage.
+- **What went:** the Share button and Live collaboration entries (top right, menu, welcome screen, command palette), the share dialog and its QR code, `#room=` links, the room socket (`socket.io-client`), Firestore scene sync, the collaborator username store, following another user, the offline warning, and the `?collaborators=N` debug helper.
+- **Files:** `excalidraw-app/collab/`, `excalidraw-app/share/`, `debugCollaborators.ts`, `tests/collab.test.tsx` deleted; `App.tsx`, `AppMainMenu.tsx`, `AppWelcomeScreen.tsx`, `data/index.ts`, `data/firebase.ts`, `data/localStorage.ts`, `app_constants.ts`, `vite-env.d.ts`, `index.scss`, `.env.*`, `package.json`, `yarn.lock` edited.
+- **Note:** the library still has its collaboration props (`isCollaborating`, `onPointerUpdate`, ...). The app just no longer passes them.

@@ -1,21 +1,8 @@
-import { reconcileElements } from "@excalidraw/excalidraw";
-import { MIME_TYPES, toBrandedType } from "@excalidraw/common";
+import { MIME_TYPES } from "@excalidraw/common";
 import { decompressData } from "@excalidraw/excalidraw/data/encode";
-import {
-  encryptData,
-  decryptData,
-} from "@excalidraw/excalidraw/data/encryption";
-import { restoreElements } from "@excalidraw/excalidraw/data/restore";
-import { getSceneVersion } from "@excalidraw/element";
 
-import type { RemoteExcalidrawElement } from "@excalidraw/excalidraw/data/reconcile";
+import type { FileId } from "@excalidraw/element/types";
 import type {
-  ExcalidrawElement,
-  FileId,
-  OrderedExcalidrawElement,
-} from "@excalidraw/element/types";
-import type {
-  AppState,
   BinaryFileData,
   BinaryFileMetadata,
   DataURL,
@@ -23,12 +10,6 @@ import type {
 
 import { FILE_CACHE_MAX_AGE_SEC } from "../app_constants";
 
-import { getSyncableElements } from ".";
-
-import type { SyncableExcalidrawElement } from ".";
-import type Portal from "../collab/Portal";
-import type { Socket } from "socket.io-client";
-import type { Bytes } from "firebase/firestore";
 import type { UploadMetadata } from "firebase/storage";
 
 // private
@@ -60,12 +41,6 @@ const _initializeFirebase = lazy(async () => {
   return { sdk, app: sdk.initializeApp(FIREBASE_CONFIG) };
 });
 
-const _loadFirestore = lazy(async () => {
-  const { sdk, app } = await _initializeFirebase();
-  const { getFirestore, doc, getDoc, runTransaction, Bytes } = sdk;
-  return { firestore: getFirestore(app), doc, getDoc, runTransaction, Bytes };
-});
-
 const _loadStorage = lazy(async () => {
   const { sdk, app } = await _initializeFirebase();
   const { getStorage, ref, uploadBytes } = sdk;
@@ -81,64 +56,6 @@ export const uploadBytesToFirebase = async (
 ) => {
   const { storage, ref, uploadBytes } = await _loadStorage();
   return uploadBytes(ref(storage, path), data, metadata);
-};
-
-type FirebaseStoredScene = {
-  sceneVersion: number;
-  iv: Bytes;
-  ciphertext: Bytes;
-};
-
-const encryptElements = async (
-  key: string,
-  elements: readonly ExcalidrawElement[],
-): Promise<{ ciphertext: ArrayBuffer; iv: Uint8Array }> => {
-  const json = JSON.stringify(elements);
-  const encoded = new TextEncoder().encode(json);
-  const { encryptedBuffer, iv } = await encryptData(key, encoded);
-
-  return { ciphertext: encryptedBuffer, iv };
-};
-
-const decryptElements = async (
-  data: FirebaseStoredScene,
-  roomKey: string,
-): Promise<readonly ExcalidrawElement[]> => {
-  const ciphertext = data.ciphertext.toUint8Array() as Uint8Array<ArrayBuffer>;
-  const iv = data.iv.toUint8Array() as Uint8Array<ArrayBuffer>;
-
-  const decrypted = await decryptData(iv, ciphertext, roomKey);
-  const decodedData = new TextDecoder("utf-8").decode(
-    new Uint8Array(decrypted),
-  );
-  return JSON.parse(decodedData);
-};
-
-class FirebaseSceneVersionCache {
-  private static cache = new WeakMap<Socket, number>();
-  static get = (socket: Socket) => {
-    return FirebaseSceneVersionCache.cache.get(socket);
-  };
-  static set = (
-    socket: Socket,
-    elements: readonly SyncableExcalidrawElement[],
-  ) => {
-    FirebaseSceneVersionCache.cache.set(socket, getSceneVersion(elements));
-  };
-}
-
-export const isSavedToFirebase = (
-  portal: Portal,
-  elements: readonly ExcalidrawElement[],
-): boolean => {
-  if (portal.socket && portal.roomId && portal.roomKey) {
-    const sceneVersion = getSceneVersion(elements);
-
-    return FirebaseSceneVersionCache.get(portal.socket) === sceneVersion;
-  }
-  // if no room exists, consider the room saved so that we don't unnecessarily
-  // prevent unload (there's nothing we could do at that point anyway)
-  return true;
 };
 
 export const saveFilesToFirebase = async ({
@@ -171,107 +88,6 @@ export const saveFilesToFirebase = async ({
   );
 
   return { savedFiles, erroredFiles };
-};
-
-const createFirebaseSceneDocument = async (
-  elements: readonly SyncableExcalidrawElement[],
-  roomKey: string,
-) => {
-  const sceneVersion = getSceneVersion(elements);
-  const { ciphertext, iv } = await encryptElements(roomKey, elements);
-  const { Bytes } = await _loadFirestore();
-  return {
-    sceneVersion,
-    ciphertext: Bytes.fromUint8Array(new Uint8Array(ciphertext)),
-    iv: Bytes.fromUint8Array(iv),
-  } as FirebaseStoredScene;
-};
-
-export const saveToFirebase = async (
-  portal: Portal,
-  elements: readonly SyncableExcalidrawElement[],
-  appState: AppState,
-) => {
-  const { roomId, roomKey, socket } = portal;
-  if (
-    // bail if no room exists as there's nothing we can do at this point
-    !roomId ||
-    !roomKey ||
-    !socket ||
-    isSavedToFirebase(portal, elements)
-  ) {
-    return null;
-  }
-
-  const { firestore, doc, runTransaction } = await _loadFirestore();
-  const docRef = doc(firestore, "scenes", roomId);
-
-  const storedScene = await runTransaction(firestore, async (transaction) => {
-    const snapshot = await transaction.get(docRef);
-
-    if (!snapshot.exists()) {
-      const storedScene = await createFirebaseSceneDocument(elements, roomKey);
-
-      transaction.set(docRef, storedScene);
-
-      return storedScene;
-    }
-
-    const prevStoredScene = snapshot.data() as FirebaseStoredScene;
-    const prevStoredElements = getSyncableElements(
-      restoreElements(await decryptElements(prevStoredScene, roomKey), null),
-    );
-    const reconciledElements = getSyncableElements(
-      reconcileElements(
-        elements,
-        prevStoredElements as OrderedExcalidrawElement[] as RemoteExcalidrawElement[],
-        appState,
-      ),
-    );
-
-    const storedScene = await createFirebaseSceneDocument(
-      reconciledElements,
-      roomKey,
-    );
-
-    transaction.update(docRef, storedScene);
-
-    // Return the stored elements as the in memory `reconciledElements` could have mutated in the meantime
-    return storedScene;
-  });
-
-  const storedElements = getSyncableElements(
-    restoreElements(await decryptElements(storedScene, roomKey), null),
-  );
-
-  FirebaseSceneVersionCache.set(socket, storedElements);
-
-  return toBrandedType<RemoteExcalidrawElement[]>(storedElements);
-};
-
-export const loadFromFirebase = async (
-  roomId: string,
-  roomKey: string,
-  socket: Socket | null,
-): Promise<readonly SyncableExcalidrawElement[] | null> => {
-  const { firestore, doc, getDoc } = await _loadFirestore();
-  const docRef = doc(firestore, "scenes", roomId);
-  const docSnap = await getDoc(docRef);
-  if (!docSnap.exists()) {
-    return null;
-  }
-  const storedScene = docSnap.data() as FirebaseStoredScene;
-  const elements = getSyncableElements(
-    restoreElements(await decryptElements(storedScene, roomKey), null, {
-      deleteInvisibleElements: true,
-    }),
-  );
-
-  if (socket) {
-    FirebaseSceneVersionCache.set(socket, elements);
-  }
-
-  return elements;
 };
 
 export const loadFilesFromFirebase = async (
