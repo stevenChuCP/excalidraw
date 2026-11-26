@@ -48,3 +48,9 @@ Rules:
 - **What went:** the Simple Analytics script in `index.html`, the app's load events, tracking turned on in builds and in development, Sentry (`@sentry/browser`, `callsites`) and its error reporting, and the error screen's "open a GitHub issue" link to the upstream bug tracker. The error screen still offers reload, clear canvas, and the scene content to copy.
 - **Files:** `excalidraw-app/sentry.ts`, `bug-issue-template.js` deleted; `index.tsx`, `index.html`, `App.tsx`, `components/TopErrorBoundary.tsx`, `vite-env.d.ts`, `package.json` (both), `.env.development`, `yarn.lock` edited.
 - **Note:** the library's `trackEvent` stays, and does nothing because `VITE_APP_ENABLE_TRACKING` is never `true`.
+
+## Upstream font CDN and Google Fonts preconnect
+
+- **Why:** the production build loaded its fonts from the Excalidraw CDN, and `index.html` opened connections to Google Fonts. Both are network calls that leave the browser.
+- **What went:** the CDN address in the font build plugin (fonts now load from the app's own `/fonts/`, which the build already ships), the CDN rewrite of the UI font CSS, the preload of a UI font that only the CDN had, and the two Google Fonts `preconnect` links.
+- **Files:** `scripts/woff2/woff2-vite-plugins.js`, `excalidraw-app/index.html` edited.
