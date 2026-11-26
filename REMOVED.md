@@ -35,3 +35,9 @@ Rules:
 - **Why:** share links upload the scene and its images to the upstream backend and Firebase storage. FlowAPI keeps work in the `.flowapi` file.
 - **What went:** "Shareable link" in the export dialog and its link dialog, opening `#json=`, `?id=` and `#url=` links (the app now always loads the scene from browser storage), reloading the scene on hash change, the "end-to-end encrypted" footer badge, and the `VITE_APP_BACKEND_V2_*` settings.
 - **Files:** `excalidraw-app/data/index.ts`, `components/EncryptedIcon.tsx` deleted; `App.tsx`, `AppFooter.tsx`, `data/FileManager.ts`, `app_constants.ts`, `vite-env.d.ts`, `index.scss`, `.env.*` edited.
+
+## Firebase
+
+- **Why:** after collaboration and share links went, nothing used it, and the app must not talk to upstream servers.
+- **What went:** the Firebase SDK (`firebase` package), the storage helpers, their test, and the `VITE_APP_FIREBASE_CONFIG` setting (which held upstream project keys).
+- **Files:** `excalidraw-app/data/firebase.ts`, `data/firebaseSDK.ts`, `tests/firebase.test.ts` deleted; `app_constants.ts`, `vite-env.d.ts`, `vite.config.mts`, `.env.*`, `package.json`, `yarn.lock` edited.

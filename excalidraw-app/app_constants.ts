@@ -2,13 +2,6 @@
 export const SAVE_TO_LOCAL_STORAGE_TIMEOUT = 300;
 export const SYNC_BROWSER_TABS_TIMEOUT = 50;
 
-// 1 year (https://stackoverflow.com/a/25201898/927631)
-export const FILE_CACHE_MAX_AGE_SEC = 31536000;
-
-export const FIREBASE_STORAGE_PREFIXES = {
-  shareLinkFiles: `/files/shareLinks`,
-};
-
 export const STORAGE_KEYS = {
   LOCAL_STORAGE_ELEMENTS: "excalidraw",
   LOCAL_STORAGE_APP_STATE: "excalidraw-state",
