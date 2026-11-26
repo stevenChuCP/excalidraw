@@ -1,0 +1,69 @@
+# Test fixture for FlowAPI acceptance checks (written by Claude, not a real CA API).
+# Second spec in a project: keys use the E prefix; revokeCert (E3) is used by no flow.
+openapi: 3.1.0
+info:
+  title: CA API
+  version: 0.0.1-fixture
+paths:
+  /certs:
+    post:
+      operationId: issueCert
+      summary: Issue a certificate
+      x-diagram-tag: E1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [csr]
+              properties:
+                csr: { type: string, description: PEM-encoded CSR }
+      responses:
+        "201":
+          description: Issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serial: { type: string }
+                  cert_pem: { type: string }
+  /certs/{serial}:
+    parameters:
+      - name: serial
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getCert
+      summary: Get a certificate and its status
+      x-diagram-tag: E2
+      responses:
+        "200":
+          description: Certificate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serial: { type: string }
+                  status: { type: string, enum: [valid, revoked, expired] }
+    delete:
+      operationId: revokeCert
+      summary: Revoke a certificate
+      x-diagram-tag: E3
+      responses:
+        "204":
+          description: Revoked
+  /crl:
+    get:
+      operationId: getCrl
+      summary: Download the current CRL
+      x-diagram-tag: E4
+      responses:
+        "200":
+          description: CRL in DER
+          content:
+            application/pkix-crl:
+              schema: { type: string, format: binary }

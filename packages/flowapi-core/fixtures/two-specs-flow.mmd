@@ -1,0 +1,15 @@
+%% @oai-doc kx kx-sign-openapi.yaml
+%% @oai-doc ca ca-openapi.yaml
+%% Test fixture for FlowAPI acceptance checks (written by Claude).
+%% Uses two specs: unprefixed keys go to the first (kx), ca: keys to the CA spec.
+sequenceDiagram
+    participant TB as 第三方後端
+    participant CA as CA
+    participant S as SaaS
+    %% @api ca:E1
+    TB->>CA: POST /certs (issue signer certificate)
+    CA-->>TB: 201 serial, cert_pem
+    %% @api A1
+    TB->>S: POST /v1/sign-requests
+    %% @api ca:E2
+    S->>CA: GET /certs/{serial} (check status before verifying)

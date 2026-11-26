@@ -1,0 +1,48 @@
+# Test fixture for FlowAPI acceptance checks (written by Claude).
+# No operation has x-diagram-tag, so importing it must ask for a naming pattern.
+openapi: 3.1.0
+info:
+  title: Notes API
+  version: 0.0.1-fixture
+paths:
+  /notes:
+    get:
+      operationId: listNotes
+      summary: List notes
+      responses:
+        "200":
+          description: Notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Note" }
+    post:
+      operationId: createNote
+      summary: Create a note
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Note" }
+      responses:
+        "201":
+          description: Created
+  /notes/{id}:
+    delete:
+      operationId: deleteNote
+      summary: Delete a note
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: Deleted
+components:
+  schemas:
+    Note:
+      type: object
+      properties:
+        id: { type: string }
+        text: { type: string }

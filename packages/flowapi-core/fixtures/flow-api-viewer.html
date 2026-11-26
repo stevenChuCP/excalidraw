@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow and API Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+<style>
+/* Generic version of QR-signing-canvas.html: loads any Mermaid sequenceDiagram + OpenAPI file and builds the canvas. */
+:root{
+  --canvas:#f6f6f2; --dot:#d6d6cf; --surface:#ffffff; --ink:#1a1f26; --ink-2:#4b5563; --ink-3:#7b8492;
+  --frame:#222831; --line:#cfd4da;
+  --actor:#7ccbf5; --actor-ink:#0a2b3c;
+  --card:#8fd48f; --card-head:#7ccb7c; --card-ink:#10301a; --card-body:#f3fbf3; --card-line:#4da34d;
+  --card-x:#d7dbe0; --card-x-head:#c9ced5; --card-x-line:#9aa3ad;
+  --api:#0b66a8; --api-soft:#d8ecfb; --link:#d9480f;
+  --note-bg:#fff4d6; --note-line:#d9a21b; --note-ink:#4a3600;
+  --warn-bg:#fde8e6; --warn-line:#d4493b; --warn-ink:#5a1610;
+  --band:#eef0f3; --band-ink:#3b4452;
+  --code-bg:#12202c; --code-ink:#dbe7f0;
+  --font-body:"IBM Plex Sans","Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --canvas:#12161b; --dot:#262d36; --surface:#1a2028; --ink:#e7edf3; --ink-2:#aab4c0; --ink-3:#7f8b99;
+    --frame:#9aa6b4; --line:#2e3844;
+    --actor:#2d7fa6; --actor-ink:#f2fbff;
+    --card:#2f6b3f; --card-head:#2a6038; --card-ink:#eaf8ee; --card-body:#16231a; --card-line:#5fb374;
+    --card-x:#2c333c; --card-x-head:#262c34; --card-x-line:#58626e;
+    --api:#6cc0f0; --api-soft:#17384d; --link:#ff9a62;
+    --note-bg:#3a2f0e; --note-line:#b88a1f; --note-ink:#f3dfa4;
+    --warn-bg:#3b1a17; --warn-line:#d4584a; --warn-ink:#f6c9c3;
+    --band:#222a34; --band-ink:#b9c4d2;
+    --code-bg:#0b1219; --code-ink:#cfe0ee; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --canvas:#12161b; --dot:#262d36; --surface:#1a2028; --ink:#e7edf3; --ink-2:#aab4c0; --ink-3:#7f8b99;
+  --frame:#9aa6b4; --line:#2e3844;
+  --actor:#2d7fa6; --actor-ink:#f2fbff;
+  --card:#2f6b3f; --card-head:#2a6038; --card-ink:#eaf8ee; --card-body:#16231a; --card-line:#5fb374;
+  --card-x:#2c333c; --card-x-head:#262c34; --card-x-line:#58626e;
+  --api:#6cc0f0; --api-soft:#17384d; --link:#ff9a62;
+  --note-bg:#3a2f0e; --note-line:#b88a1f; --note-ink:#f3dfa4;
+  --warn-bg:#3b1a17; --warn-line:#d4584a; --warn-ink:#f6c9c3;
+  --band:#222a34; --band-ink:#b9c4d2;
+  --code-bg:#0b1219; --code-ink:#cfe0ee; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--canvas);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.55;overflow:hidden}
+#vp{position:fixed;inset:0;overflow:hidden;touch-action:none;cursor:grab;
+  background-color:var(--canvas);background-image:radial-gradient(var(--dot) 1.2px,transparent 1.3px);background-size:24px 24px}
+#vp.panning{cursor:grabbing}
+#world{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform}
+#world.anim{transition:transform .38s cubic-bezier(.2,.7,.2,1)}
+@media (prefers-reduced-motion:reduce){#world.anim{transition:none}}
+#links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:99999}
+#links .lk{fill:none;stroke:var(--link);stroke-width:3;stroke-linecap:round}
+#links .dot{fill:var(--link)} #links .hd{fill:var(--link)}
+
+.panel{position:absolute;touch-action:none;user-select:none;-webkit-user-select:none}
+.panel.dragging{cursor:grabbing;box-shadow:0 12px 30px rgba(0,0,0,.18)}
+.seq{background:var(--surface);border:2.5px dotted var(--frame);border-radius:6px;padding:12px 16px 16px;cursor:grab}
+.seq h2{margin:0 0 6px;text-align:center;font-size:17px;font-weight:500;letter-spacing:.02em}
+.seq svg{display:block}
+.card{width:400px;height:500px;background:var(--card);border:2px solid var(--card-line);border-radius:6px;display:flex;flex-direction:column;color:var(--card-ink);cursor:grab}
+.card.orphan{background:var(--card-x);border-color:var(--card-x-line);color:var(--ink)}
+.card.orphan .ch{background:var(--card-x-head)}
+.card.orphan .m{background:var(--ink);color:var(--card-x-head)}
+.card.active{box-shadow:0 0 0 4px var(--link)}
+.card.flash{animation:flash .9s ease-out 1}
+@keyframes flash{0%{box-shadow:0 0 0 14px color-mix(in srgb,var(--link) 45%,transparent)}100%{box-shadow:0 0 0 4px var(--link)}}
+@media (prefers-reduced-motion:reduce){.card.flash{animation:none}}
+.ch{padding:10px 12px 8px;background:var(--card-head);border-radius:4px 4px 0 0}
+.ch .r1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tg{font-weight:700;font-size:15px}
+.m{display:inline-block;border-radius:999px;padding:0 8px;font-family:var(--font-mono);font-size:11px;font-weight:500;background:var(--card-ink);color:var(--card-head)}
+.path{font-family:var(--font-mono);font-size:12px;word-break:break-all}
+.ch .r2{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:4px}
+.ch .ttl{font-size:14px;font-weight:600}
+.badge{font-size:11px;border-radius:4px;padding:0 6px;border:1px dashed currentColor;white-space:nowrap}
+.back{font:inherit;font-size:12px;border:1px solid currentColor;background:transparent;color:inherit;border-radius:999px;padding:1px 9px;cursor:pointer;white-space:nowrap}
+.back:hover{background:var(--card-ink);color:var(--card-head)}
+.scroll{flex:1;overflow:auto;background:var(--card-body);color:var(--ink);padding:10px 12px 12px;border-radius:0 0 4px 4px;user-select:text;-webkit-user-select:text;cursor:auto}
+.card.orphan .scroll{background:var(--surface)}
+.scroll h3{margin:14px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.scroll h3:first-child{margin-top:0}
+.scroll h4{margin:8px 0 3px;font-size:12.5px;font-weight:600}
+.scroll p{margin:0 0 6px}
+.scroll ul{margin:0 0 6px;padding-left:1.1em} .scroll li{margin:2px 0}
+.scroll code{font-family:var(--font-mono);font-size:12px;background:color-mix(in srgb,var(--ink) 8%,transparent);border-radius:3px;padding:0 3px}
+.meta{display:grid;grid-template-columns:6.2em 1fr;gap:2px 8px;margin:0 0 4px} .meta dt{color:var(--ink-3)} .meta dd{margin:0;min-width:0}
+.steps{display:flex;flex-direction:column;gap:2px}
+.steps button{font:inherit;font-size:12.5px;text-align:left;background:none;border:0;padding:0;color:var(--api);cursor:pointer}
+.steps button:hover{text-decoration:underline}
+.code{position:relative;margin:0 0 6px}
+.code pre{margin:0;background:var(--code-bg);color:var(--code-ink);border-radius:6px;padding:9px 10px;overflow-x:auto;font-family:var(--font-mono);font-size:11.5px;line-height:1.5}
+.code .cap{font-size:11.5px;color:var(--ink-2);margin:3px 0 0}
+.copy{position:absolute;top:5px;right:5px;border:1px solid #3a4a5b;background:#1a2a39;color:#cfe0ee;border-radius:5px;font:inherit;font-size:11px;padding:1px 7px;cursor:pointer}
+.tbl{width:100%;border-collapse:collapse;font-size:12px;margin:0 0 6px} .tbl td,.tbl th{padding:3px 4px;border-top:1px solid var(--line);vertical-align:top;text-align:left}
+.tbl th{font-weight:600;color:var(--ink-3);font-size:11px;border-top:0}
+.tbl td.k{font-family:var(--font-mono);font-size:11px;word-break:break-all}
+.tbl .req{color:var(--link);font-weight:700}
+.callout{background:var(--note-bg);border:1px solid var(--note-line);color:var(--note-ink);border-radius:6px;padding:5px 9px;font-size:12.5px;margin:0 0 6px}
+.doclinks{display:flex;flex-wrap:wrap;gap:4px 8px} .doclinks a{color:var(--api)}
+.chip{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:0 8px}
+.scroll a:focus-visible,.back:focus-visible,.copy:focus-visible,.hud button:focus-visible,#seq .api:focus-visible,.panel:focus-visible,.steps button:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+
+#seq{font-family:var(--font-body)}
+#seq .life{stroke:var(--ink);stroke-width:2;opacity:.85}
+#seq .actor rect{fill:var(--actor)}
+#seq .actor .an{fill:var(--actor-ink);font-size:16px;font-weight:700;text-anchor:middle}
+#seq .actor .as{fill:var(--actor-ink);opacity:.75;font-size:11.5px;text-anchor:middle}
+#seq .band{fill:var(--band)} #seq .bandt{fill:var(--band-ink);font-size:12.5px;font-weight:700}
+#seq .band.warn{fill:var(--warn-bg)} #seq .bandt.warn{fill:var(--warn-ink)}
+#seq .region{fill:none;stroke:var(--line);stroke-width:1}
+#seq .lbl{fill:var(--ink);font-size:14px;text-anchor:middle;paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
+#seq .self .lbl{text-anchor:start}
+#seq .ln{stroke:var(--ink);stroke-width:1.8;fill:none}
+#seq .ret .ln{stroke-dasharray:7 5}
+#seq .mk{fill:var(--ink)} #seq .mk-api{fill:var(--api)} #seq .mko{fill:none;stroke:var(--ink);stroke-width:1.6} #seq .mko-api{fill:none;stroke:var(--api);stroke-width:1.8}
+#seq .plain .lbl{fill:var(--ink-2)}
+#seq .api{cursor:pointer}
+#seq .api .ln{stroke:var(--api);stroke-width:2.4}
+#seq .api .lbl{fill:var(--api);font-weight:500}
+#seq .hit{fill:transparent}
+#seq .api:hover .hit,#seq .api.hot .hit{fill:var(--api-soft);opacity:.7}
+#seq .api.active .hit{fill:var(--api-soft);opacity:1}
+#seq .api.active .ln{stroke-width:3.6} #seq .api.active .lbl{font-weight:700}
+#seq .tag rect{fill:var(--card);stroke:var(--card-line);stroke-width:1.3}
+#seq .tag text{fill:var(--card-ink);font-size:11px;font-weight:700;text-anchor:middle}
+#seq .guess .tag rect{stroke-dasharray:3 2;stroke:var(--ink-2);stroke-width:1.5}
+#seq .api.active .tag rect{fill:var(--link);stroke:var(--link)} #seq .api.active .tag text{fill:#fff}
+#seq .note rect{fill:var(--note-bg);stroke:var(--note-line);stroke-width:1.2}
+#seq .note text{fill:var(--note-ink);font-size:13px;text-anchor:middle}
+#seq .note.warn rect{fill:var(--warn-bg);stroke:var(--warn-line)} #seq .note.warn text{fill:var(--warn-ink)}
+#seq .frag rect.fr{fill:none;stroke:var(--ink-3);stroke-width:1.4;stroke-dasharray:5 4}
+#seq .frag path{fill:var(--surface);stroke:var(--ink-3);stroke-width:1.4}
+#seq .frag text{fill:var(--ink-2);font-size:12px}
+#seq .frag .fk{font-weight:700;fill:var(--ink)}
+#seq .frag line{stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:5 4}
+
+.hud{position:fixed;z-index:100000;font-family:var(--font-body)}
+.hud.tl{left:16px;top:14px;max-width:min(520px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.hud.tl b{font-size:15px;font-weight:600} .hud.tl span{display:block;color:var(--ink-2);font-size:12.5px}
+.hud.br{right:16px;bottom:16px;display:flex;gap:6px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px}
+.hud.tr{right:16px;top:14px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 32px)}
+.hud button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:4px 10px;cursor:pointer;min-width:2.2em}
+.hud button:hover{border-color:var(--link)}
+.hud button.warnb{border-color:var(--warn-line);color:var(--warn-ink);background:var(--warn-bg)}
+.hud .zv{min-width:3.4em;text-align:center;color:var(--ink-2);font-size:12.5px}
+.hud.bl{left:16px;bottom:16px;width:min(460px,calc(100vw - 32px));max-height:min(60vh,520px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:none;font-size:13px}
+.hud.bl.open{display:block}
+.hud.bl h3{margin:0 0 6px;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.hud.bl h4{margin:10px 0 2px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.hud.bl ul{margin:0;padding-left:1.1em} .hud.bl li{margin:2px 0}
+.hud.bl .ok{color:var(--ink-2)}
+@media (max-width:640px){.hud.tr{top:auto;bottom:64px}.hud.tl span{display:none}}
+
+/* loader */
+#loader{position:fixed;inset:0;z-index:200000;background:color-mix(in srgb,var(--canvas) 70%,transparent);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;padding:16px}
+#loader.open{display:flex}
+.ldbox{background:var(--surface);border:1px solid var(--line);border-radius:10px;width:min(980px,100%);max-height:100%;overflow:auto;padding:18px 20px;box-shadow:0 20px 50px rgba(0,0,0,.18)}
+.ldbox h2{margin:0 0 4px;font-size:18px}
+.ldbox>p{margin:0 0 14px;color:var(--ink-2);font-size:13px}
+.ldgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:720px){.ldgrid{grid-template-columns:1fr}}
+.ldcol label{display:block;font-weight:600;font-size:13px;margin-bottom:4px}
+.ldcol .row{display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:12px;color:var(--ink-2);flex-wrap:wrap}
+.ldcol textarea{width:100%;height:260px;resize:vertical;font-family:var(--font-mono);font-size:12px;border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--canvas);color:var(--ink)}
+.ldcol textarea.drop{outline:2px dashed var(--link)}
+.ldact{display:flex;gap:8px;justify-content:space-between;margin-top:14px;flex-wrap:wrap}
+.ldact div{display:flex;gap:8px;flex-wrap:wrap}
+.ldbox button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:6px 14px;cursor:pointer}
+.ldbox button.pri{background:var(--api);border-color:var(--api);color:#fff}
+.ldbox .msg{color:var(--warn-ink);background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:6px;padding:6px 10px;font-size:12.5px;margin-top:10px;display:none;white-space:pre-wrap}
+.ldbox .msg.show{display:block}
+.ldbox details{margin-top:12px;font-size:12.5px;color:var(--ink-2)} .ldbox details code{font-family:var(--font-mono);font-size:12px}
+.ldbox details ul{margin:6px 0;padding-left:1.2em}
+#dropmask{position:fixed;inset:0;z-index:300000;display:none;align-items:center;justify-content:center;background:color-mix(in srgb,var(--api) 18%,transparent);font-size:18px;font-weight:600;color:var(--ink);pointer-events:none}
+#dropmask.on{display:flex}
+#empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink-3);pointer-events:none}
+</style>
+</head>
+<body>
+<div id="vp">
+  <div id="world"></div>
+</div>
+<div id="empty">Nothing loaded yet.</div>
+<div class="hud tl"><b id="ttl">Flow and API Viewer</b><span id="sub">Drag blocks to rearrange. Click a tagged arrow to jump to its endpoint card.</span></div>
+<div class="hud tr">
+  <button type="button" id="checksBtn">Checks</button>
+  <button type="button" id="loadBtn">Load files</button>
+  <button type="button" id="fit">Show all</button>
+  <button type="button" id="reset">Reset layout</button>
+</div>
+<div class="hud br"><button type="button" id="zo" aria-label="Zoom out">−</button><span class="zv" id="zv">100%</span><button type="button" id="zi" aria-label="Zoom in">+</button></div>
+<div class="hud bl" id="checks" role="region" aria-label="Checks"></div>
+<div id="dropmask">Drop a .mmd and/or OpenAPI file</div>
+
+<div id="loader" role="dialog" aria-modal="true" aria-labelledby="ldh">
+  <div class="ldbox">
+    <h2 id="ldh">Load a flow and an API spec</h2>
+    <p>Pick or paste a Mermaid <code>sequenceDiagram</code> and an OpenAPI 3.x file (YAML or JSON). You can also drop both files anywhere on the page. Nothing is uploaded; it all stays in this browser.</p>
+    <div class="ldgrid">
+      <div class="ldcol">
+        <label for="taFlow">Sequence diagram (Mermaid)</label>
+        <div class="row"><input type="file" id="fFlow" accept=".mmd,.mermaid,.md,.txt"><span id="nFlow"></span></div>
+        <textarea id="taFlow" spellcheck="false" placeholder="sequenceDiagram&#10;    participant C as Client&#10;    participant S as Server&#10;    C->>S: [getUser] GET /users/{id}&#10;    S-->>C: 200 user"></textarea>
+      </div>
+      <div class="ldcol">
+        <label for="taSpec">OpenAPI (YAML or JSON)</label>
+        <div class="row"><input type="file" id="fSpec" accept=".yaml,.yml,.json"><span id="nSpec"></span></div>
+        <div class="row" id="oaiHint" style="display:none"></div>
+        <textarea id="taSpec" spellcheck="false" placeholder="openapi: 3.1.0&#10;paths:&#10;  /users/{id}:&#10;    get:&#10;      operationId: getUser"></textarea>
+      </div>
+    </div>
+    <div class="msg" id="ldmsg"></div>
+    <details>
+      <summary>How arrows are linked to endpoints</summary>
+      <ul>
+        <li><b>Spec file:</b> put <code>%% @oai-doc kx-sign-openapi.yaml</code> at the top of the .mmd. With <code>?flow=path/to/flow.mmd</code> the viewer loads that spec by itself (needs a web server, not file://).</li>
+        <li><b>Exact link:</b> put <code>%% @api A1</code> on the line above an arrow. It matches the operation's <code>x-diagram-tag: A1</code> (must be unique in the spec) or, failing that, its <code>operationId</code>. Mermaid ignores these comments, so the diagram renders cleanly anywhere.</li>
+        <li><b>Old style:</b> <code>[A1]</code> at the start of the arrow text still works.</li>
+        <li><b>By path (guess):</b> arrow text containing <code>POST /v1/things/{id}</code> is matched to that method and path. A leading <code>…</code> matches the end of a path. Shown with a dashed tag.</li>
+        <li><b>Replies (guess):</b> an untagged dashed reply going straight back right after a linked call is linked to the same endpoint. Also dashed.</li>
+        <li>Operations without a link still get a grey card. The <b>Checks</b> panel lists every miss.</li>
+        <li>Optional: <code>info.x-doc-links</code> maps a section name in <code>x-doc-sections</code> to a URL, so the chips become links.</li>
+      </ul>
+    </details>
+    <div class="ldact">
+      <div><button type="button" id="exBtn">Load KX Sign example</button></div>
+      <div><button type="button" id="ldCancel">Cancel</button><button type="button" class="pri" id="ldGo">Build canvas</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var SAMPLE={"flow": "%% @oai-doc kx-sign-openapi.yaml\n%% QR signing flow (KX Sign) - sequence diagram source\n%% Arrows are linked to operations with '%% @api <x-diagram-tag>' on the line above.\n%%   A1 createSignRequest   A2 createMobileSession   A3 getMobileSignRequest\n%%   A4 rejectSignRequest   A5 submitSignature       A6 webhook signResultNotification\n%%   A7 getSignRequest\nsequenceDiagram\n    participant TB as 第三方後端<br/>Bank / PDF Sign / CA\n    participant TW as 第三方網頁<br/>Browser\n    participant S as SaaS<br/>API + DB + Queue\n    participant M as Mobile<br/>App\n    participant K as KX701<br/>私鑰 + PIN\n\n    rect rgb(238, 240, 243)\n    Note over TB,K: 建立請求\n    %% @api A1\n    TB->>S: ① POST /v1/sign-requests<br/>(Idempotency-Key、OAuth2 + mTLS)\n    Note over S: 驗證租戶，建立 request_id、secret、nonce<br/>只存 secret 雜湊與失效時間\n    %% @api A1\n    S-->>TB: ② 201 request_id、launch_url\n    end\n\n    rect rgb(238, 240, 243)\n    Note over TB,K: QR 掃描與 Mobile session\n    TB->>TW: ③ 傳 launch_url<br/>網頁顯示 QR\n    TW-->>M: 使用者以 Mobile 掃描 QR\n    %% @api A2\n    M->>S: POST /v1/mobile/request-sessions<br/>(request_id + access_secret)\n    %% @api A2\n    S-->>M: 短效 Mobile session\n    end\n\n    rect rgb(238, 240, 243)\n    Note over TB,K: 取得待簽資料與簽章\n    %% @api A3\n    M->>S: ④ GET /v1/mobile/sign-requests/{id}\n    %% @api A3\n    S-->>M: 來源、待簽文字、憑證條件、DTBS\n    Note over M: ⑤ 分開顯示來源與第三方內容<br/>使用者確認\n    M->>K: 讀憑證、PIN、簽章<br/>(USB / NFC / SDK)\n    K-->>M: 憑證 + 簽章值\n    opt (選用) 拒簽\n        %% @api A4\n        M-->>S: POST …/sign-requests/{id}/reject\n    end\n    end\n\n    rect rgb(238, 240, 243)\n    Note over TB,K: 驗章與通知\n    %% @api A5\n    M->>S: ⑥ POST /v1/mobile/sign-requests/{id}/signatures<br/>(憑證鏈、簽章值、演算法識別)\n    Note over S: ⑦ 重建 DTBS，驗憑證鏈、撤銷、限制、簽章<br/>pending → signed\n    %% @api A6\n    S->>TB: ⑧ Webhook<br/>(HMAC、timestamp、delivery id)\n    Note over TB: 驗 HMAC，核對 request_id\n    %% @api A7\n    TB->>S: GET /v1/sign-requests/{id}\n    %% @api A7\n    S-->>TB: 狀態 + 簽章結果\n    Note over TB: 自行驗章，確認此憑證<br/>對應該筆交易的核准人\n    TB->>TW: ⑨ 更新網頁狀態<br/>(輪詢 / 即時通道)\n    end\n\n    rect rgb(253, 232, 230)\n    Note over TB,K: 例外處理 (文件 3.2)\n    Note over TB,K: QR 過期、secret 不符：拒絕交換 session<br/>憑證不符、撤銷、簽章錯誤：拒收，不轉 signed<br/>重複或併發提交：僅一筆成功<br/>Webhook 失敗：retry + backoff，第三方可用 GET 補查\n    end\n", "spec": "openapi: 3.1.0\ninfo:\n  title: KX Sign SaaS API\n  version: 0.1.0-draft\n  summary: QR 簽章流程 API 規格 (KX701 signing SaaS)\n  description: |\n    Extracted from the QR signing canvas (SaaS Technical Design v0.1).\n    Only what the design document already states is defined here. Where v0.1\n    leaves request/response fields open, the schema is a loose placeholder and\n    carries `x-undefined: true`.\n\n    Flow tags (A1-A7) refer to the sequence diagram in `kx-sign-flow.mmd`.\n    `x-doc-sections` lists the related sections in the design document.\nservers:\n  - url: https://api.example.com\n    description: Placeholder. Replace with the real SaaS base URL.\ntags:\n  - name: Tenant API\n    description: 第三方後端（租戶）呼叫\n  - name: Mobile API\n    description: Mobile App 以短效 session 呼叫\n  - name: Webhook\n    description: SaaS 呼叫第三方\n\nsecurity:\n  - tenantOAuth2: []\n\npaths:\n  /v1/sign-requests:\n    post:\n      operationId: createSignRequest\n      tags: [Tenant API]\n      summary: A1 建立簽章請求及 QR 入口\n      description: |\n        提交交易摘要、交易資料 digest、憑證限制與到期時間。SaaS 建立 request 並回傳 launch_url。流程步驟 ① ②。\n\n        - SaaS 建立 request_id、access_secret（至少 128-bit 隨機）、nonce，只儲存 access_secret 的雜湊與失效時間。\n        - launch_url 把 secret 放在 URL fragment 以減少 HTTP 傳輸洩漏。URL 仍屬敏感資訊，需設定 Referrer-Policy 與 log redaction，Mobile 兌換 session 後不再重用 secret。\n        - 入口 token 必須可撤銷、不可猜測。\n        - payload_hash 由銀行依雙方約定規則計算，不是 SaaS 產生（待決議 D04）。\n        - QR secret TTL 暫定 5 分鐘。\n        - tenant_id 由經驗證的 client identity 決定，不能只依靠 Request Body；查詢與結果均以 tenant scope 限制。\n      x-diagram-tag: A1\n      x-doc-sections: [\"§6 API Contract\", \"§6.1 Create Sign Request\", \"§3 Signing Flow\", \"§8 Security\"]\n      parameters:\n        - name: Idempotency-Key\n          in: header\n          required: true\n          schema: { type: string }\n          example: 7c0c4f5a-...\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/CreateSignRequest\" }\n            example:\n              type: bank_approval\n              display_text: \"核准轉帳：收款末五碼 12345，金額 TWD 10,000\"\n              payload_hash_alg: SHA-256\n              payload_hash: \"<base64url-of-32-bytes>\"\n              cert_constraint:\n                type: fingerprint_sha256\n                values: [\"<hex-of-cert-sha256>\"]\n              signing_profile: RAW_V1_RSA_SHA256\n              expires_in_seconds: 300\n      responses:\n        \"201\":\n          description: Created\n          content:\n            application/json:\n              schema: { $ref: \"#/components/schemas/CreateSignRequestResponse\" }\n              example:\n                request_id: \"<uuid>\"\n                status: pending\n                expires_at: \"<RFC3339>\"\n                launch_url: \"https://sign.example.com/r/<request-id>#t=<one-time-access-secret>\"\n        \"4XX\": { $ref: \"#/components/responses/Error\" }\n\n  /v1/sign-requests/{id}:\n    get:\n      operationId: getSignRequest\n      tags: [Tenant API]\n      summary: A7 查詢狀態及結果\n      description: |\n        第三方收到 webhook 後用它取回結果，webhook 失敗時也靠它補查。\n\n        - 主狀態：pending → signed / rejected / expired / cancelled。\n        - 租戶 B 不能查詢或操作租戶 A 的任何 request。\n        - 不提供憑證存在性查詢，錯誤回傳不暴露其他租戶或簽章者資訊。\n        - 第三方取回後須自行驗章：以 DTBS 與憑證獨立驗證，並確認該憑證對應此筆交易的核准人。\n        - SaaS 驗章不等於替第三方認定業務授權。\n      x-diagram-tag: A7\n      x-doc-sections: [\"§6 API Contract\", \"§3.1 Request States\", \"§8 Security\"]\n      parameters:\n        - { $ref: \"#/components/parameters/RequestId\" }\n      responses:\n        \"200\":\n          description: 狀態 + 簽章結果\n          content:\n            application/json:\n              schema: { $ref: \"#/components/schemas/SignRequestResult\" }\n        \"4XX\": { $ref: \"#/components/responses/Error\" }\n\n  /v1/mobile/request-sessions:\n    post:\n      operationId: createMobileSession\n      tags: [Mobile API]\n      summary: A2 以 QR secret 交換短效 session\n      description: |\n        用 request_id 與 access_secret 換取只對應這一筆請求的短效 session。Mobile 掃描 QR 之後呼叫。\n\n        - Mobile 端不持有租戶 API Key；憑據是 QR / Link 內受限、短效的 request access 憑據（request_id + access_secret）。\n        - QR 憑據只用於取得本筆請求，不能用於查詢其他請求。\n        - access_secret 使用 CSPRNG，至少 128-bit，TTL 暫定 5 分鐘，需限流與 secret redaction。\n        - SaaS 只存 secret 雜湊（mobile_request_sessions 設 TTL 並限次）。\n        - 兌換 session 後不再重用 secret。\n        - QR 過期 / secret 不符：拒絕交換 Mobile session，不洩漏請求細節。\n      x-diagram-tag: A2\n      x-doc-sections: [\"§6 API Contract\", \"§3 Signing Flow\", \"§3.2 Failure Handling\", \"§8 Security\", \"§7 Database\"]\n      security: []\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n              type: object\n              x-undefined: true\n              description: v0.1 尚未定義欄位。文件只寫明憑據為 request_id + access_secret。\n              properties:\n                request_id: { type: string }\n                access_secret: { type: string }\n      responses:\n        \"200\":\n          description: 短效 Mobile session。v0.1 尚未定義 Response 欄位。\n          content:\n            application/json:\n              schema: { type: object, additionalProperties: true, x-undefined: true }\n        \"4XX\": { $ref: \"#/components/responses/Error\" }\n\n  /v1/mobile/sign-requests/{id}:\n    get:\n      operationId: getMobileSignRequest\n      tags: [Mobile API]\n      summary: A3 取得來源、DTBS、待簽資訊\n      description: |\n        取得要顯示給使用者的內容，以及要送進 KX701 簽的資料。流程步驟 ④。session 必須對應同一個 request。\n\n        - 回傳已審核的 tenant.display_name / 圖示、待簽文字、必要的憑證條件、signing_profile 與可驗證的待簽資料（DTBS）。\n        - SaaS 生成、儲存並可回傳確切 DTBS bytes，確保跨平台完全一致。\n        - Mobile 將平台已驗證來源與「第三方提供的待簽內容」分開顯示。\n        - 簽章前 App 應顯示與 DTBS 綁定的文字，不能用另一份未受保護的文字替代。\n\n        DTBS 格式（§4 Raw v1 提案）：\n\n        ```\n        DTBSv1 = UTF8(\"KX-SIGN-RAW-V1\\n\") || UTF8(JCS(SigningPayload))\n        ```\n\n        SigningPayload 見 components/schemas/SigningPayload。\n      x-diagram-tag: A3\n      x-doc-sections: [\"§6 API Contract\", \"§3 Signing Flow\", \"§4 Signing Profile\"]\n      security:\n        - mobileSession: []\n      parameters:\n        - { $ref: \"#/components/parameters/RequestId\" }\n      responses:\n        \"200\":\n          description: 來源、待簽文字、憑證條件、DTBS。v0.1 尚未定義 Response 欄位名稱。\n          content:\n            application/json:\n              schema: { type: object, additionalProperties: true, x-undefined: true }\n        \"4XX\": { $ref: \"#/components/responses/Error\" }\n\n  /v1/mobile/sign-requests/{id}/reject:\n    post:\n      operationId: rejectSignRequest\n      tags: [Mobile API]\n      summary: A4 主動拒簽（選用）\n      description: |\n        使用者在 Mobile 上拒絕簽署。文件把它列為 optional，對應主狀態 rejected。MVP 是否實作待確認。\n      x-diagram-tag: A4\n      x-doc-sections: [\"§6 API Contract\", \"§3.1 Request States\"]\n      security:\n        - mobileSession: []\n      parameters:\n        - { $ref: \"#/components/parameters/RequestId\" }\n      requestBody:\n        content:\n          application/json:\n            schema: { type: object, additionalProperties: true, x-undefined: true }\n      responses:\n        \"200\":\n          description: v0.1 尚未定義 Response 欄位。\n          content:\n            application/json:\n              schema: { type: object, additionalProperties: true, x-undefined: true }\n        \"4XX\": { $ref: \"#/components/responses/Error\" }\n\n  /v1/mobile/sign-requests/{id}/signatures:\n    post:\n      operationId: submitSignature\n      tags: [Mobile API]\n      summary: A5 提交憑證及簽章\n      description: |\n        把 KX701 產生的簽章與憑證交給 SaaS。SaaS 重建 DTBS、驗章，通過才標為 signed。流程步驟 ⑥ ⑦。\n\n        Server 最少驗證：\n        - 請求仍有效（未過期）\n        - Mobile session 對應同一 request\n        - tenant issuer policy\n        - 憑證鏈、憑證用途與狀態（含 OCSP/CRL）\n        - 憑證 fingerprint 限制\n        - 對伺服器重建 DTBS 的簽章\n        - 唯一狀態更新（pending → signed）\n\n        行為：\n        - SaaS 不接收 PIN，PIN 只在 Mobile 與 KX701 之間。\n        - 不得直接採信 Mobile 自稱的使用者身分。\n        - 同一 request_id 僅允許一筆成功簽章，以 conditional update / unique constraint 防止併發雙重完成。\n        - OCSP/CRL 無法取得時採 fail-closed。\n        - 驗證失敗不會使請求成為 signed。\n      x-diagram-tag: A5\n      x-doc-sections: [\"§6 API Contract\", \"§6.2 Submit Signature\", \"§3 Signing Flow\", \"§3.2 Failure Handling\", \"§8 Security\"]\n      security:\n        - mobileSession: []\n      parameters:\n        - { $ref: \"#/components/parameters/RequestId\" }\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema: { $ref: \"#/components/schemas/SubmitSignatureRequest\" }\n            example:\n              signing_profile: RAW_V1_RSA_SHA256\n              cert_der_base64: \"<base64-DER>\"\n              signature_base64: \"<base64-signature>\"\n      responses:\n        \"200\":\n          description: 驗證通過，狀態轉為 signed。v0.1 尚未定義 Response 欄位。\n          content:\n            application/json:\n              schema: { type: object, additionalProperties: true, x-undefined: true }\n        \"4XX\":\n          $ref: \"#/components/responses/Error\"\n\nwebhooks:\n  signResultNotification:\n    post:\n      operationId: signResultNotification\n      tags: [Webhook]\n      summary: A6 簽章結果通知（SaaS 呼叫第三方）\n      description: |\n        簽章完成後 SaaS（WebhookModule）排入 webhook 任務通知第三方，目標為 tenants.webhook_url。流程步驟 ⑧。\n\n        - 租戶專屬 HMAC 簽署，附 timestamp 與 delivery id；Webhook 密鑰需可輪替，存放於 Secret Manager。\n        - 第三方收到後先驗 HMAC、確認 request_id 歸屬，再透過 A7 取回並驗證結果。\n        - delivery ID、timestamp、HMAC 用來防止重播。\n        - Webhook 投遞狀態與簽章狀態分開保存，webhook 失敗不可回滾已驗證簽章。\n        - 失敗時 Retry + backoff，第三方也能用 A7 查詢恢復結果（§3.2）。\n        - v0.1 尚未定義 header 名稱與 payload 欄位。\n      x-diagram-tag: A6\n      x-doc-sections: [\"§5 Backend Modules\", \"§3 Signing Flow\", \"§3.2 Failure Handling\", \"§8 Security\"]\n      security: []\n      requestBody:\n        content:\n          application/json:\n            schema: { type: object, additionalProperties: true, x-undefined: true }\n      responses:\n        \"2XX\":\n          description: 第三方確認收到\n\ncomponents:\n  securitySchemes:\n    tenantOAuth2:\n      type: oauth2\n      description: OAuth2 client credentials + mTLS（具體 Profile 待擇定）。\n      flows:\n        clientCredentials:\n          tokenUrl: https://auth.example.com/oauth2/token\n          scopes: {}\n    mobileSession:\n      type: http\n      scheme: bearer\n      description: 由 A2 取得的短效 Mobile session，且必須對應同一個 request。\n\n  parameters:\n    RequestId:\n      name: id\n      in: path\n      required: true\n      schema: { type: string, format: uuid }\n\n  responses:\n    Error:\n      description: |\n        錯誤回應。body 結構為暫定，v0.1 只定義下列 code。\n        HTTP 狀態碼尚未定案。\n      content:\n        application/json:\n          schema: { $ref: \"#/components/schemas/Error\" }\n\n  schemas:\n    CreateSignRequest:\n      type: object\n      required: [type, display_text, payload_hash_alg, payload_hash, signing_profile, expires_in_seconds]\n      properties:\n        type:\n          type: string\n          example: bank_approval\n        display_text:\n          type: string\n          description: 顯示給使用者的待簽文字（綁定於 DTBS）。\n        payload_hash_alg:\n          type: string\n          example: SHA-256\n        payload_hash:\n          type: string\n          description: 由銀行依雙方約定規則計算（base64url），不是 SaaS 產生（待決議 D04）。\n        cert_constraint:\n          type: object\n          properties:\n            type:\n              type: string\n              example: fingerprint_sha256\n            values:\n              type: array\n              items: { type: string, description: hex of cert SHA-256 }\n        signing_profile:\n          type: string\n          example: RAW_V1_RSA_SHA256\n        expires_in_seconds:\n          type: integer\n          example: 300\n\n    CreateSignRequestResponse:\n      type: object\n      required: [request_id, status, expires_at, launch_url]\n      properties:\n        request_id: { type: string, format: uuid }\n        status: { $ref: \"#/components/schemas/RequestStatus\" }\n        expires_at: { type: string, format: date-time }\n        launch_url:\n          type: string\n          format: uri\n          description: secret 放在 URL fragment（#t=...）。屬敏感資訊，需 Referrer-Policy 與 log redaction。\n\n    RequestStatus:\n      type: string\n      enum: [pending, signed, rejected, expired, cancelled]\n\n    SignRequestResult:\n      type: object\n      x-undefined: true\n      description: 狀態 + 簽章結果。v0.1 只定義 status，其餘欄位待補。\n      required: [status]\n      properties:\n        status: { $ref: \"#/components/schemas/RequestStatus\" }\n      additionalProperties: true\n\n    SubmitSignatureRequest:\n      type: object\n      required: [signing_profile, cert_der_base64, signature_base64]\n      properties:\n        signing_profile: { type: string, example: RAW_V1_RSA_SHA256 }\n        cert_der_base64: { type: string, description: base64 of the DER certificate }\n        signature_base64: { type: string }\n\n    SigningPayload:\n      type: object\n      description: DTBS 內的 SigningPayload（§4 Raw v1 提案），經 JCS 正規化後與前綴串接。\n      required: [version, tenant_id, request_id, nonce, display_text, payload_hash_alg, payload_hash, expires_at]\n      properties:\n        version: { type: integer, const: 1 }\n        tenant_id: { type: string }\n        request_id: { type: string }\n        nonce: { type: string, description: server-generated nonce }\n        display_text: { type: string, description: exact text shown to user }\n        payload_hash_alg: { type: string, example: SHA-256 }\n        payload_hash: { type: string, description: base64url digest }\n        expires_at: { type: string, format: date-time, description: RFC3339 UTC timestamp }\n\n    Error:\n      type: object\n      required: [code]\n      properties:\n        code:\n          type: string\n          description: |\n            REQUEST_EXPIRED 請求已過期\n            REQUEST_ALREADY_COMPLETED 同一 request 已有成功簽章\n            CERT_NOT_ALLOWED 憑證不符合請求限制\n            CERT_REVOKED 憑證已撤銷\n            SIGNATURE_INVALID 簽章驗證失敗\n            SIGNING_PROFILE_UNSUPPORTED 不支援的 signing_profile\n          enum:\n            - REQUEST_EXPIRED\n            - REQUEST_ALREADY_COMPLETED\n            - CERT_NOT_ALLOWED\n            - CERT_REVOKED\n            - SIGNATURE_INVALID\n            - SIGNING_PROFILE_UNSUPPORTED\n        message: { type: string }\n"};
+(function(){
+"use strict";
+var STORE_IN="flowapi-inputs-v1", STORE_POS="flowapi-pos-v1:";
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+
+/* ================= Mermaid sequenceDiagram parser (subset) ================= */
+var ARROWS=["-->>","->>","-->","->","--x","-x","--)","-)"];
+function parseSeq(src){
+  var parts=[],pIdx={},issues=[],root={kind:"root",children:[]},cur=root,stack=[],auto=false,seen=false,oaiDoc=null,pending=null,stmts=0;
+  function part(id,label,actor){
+    id=id.trim();
+    if(!(id in pIdx)){pIdx[id]=parts.length;parts.push({id:id,label:label||id,actor:!!actor})}
+    else if(label){parts[pIdx[id]].label=label}
+    return pIdx[id];
+  }
+  var reMsg=new RegExp("^(.+?)\\s*("+ARROWS.map(function(a){return a.replace(/[()]/g,"\\$&")}).join("|")+")\\s*([+-]?)\\s*([^:]+?)\\s*:\\s*(.*)$");
+  src.split(/\r?\n/).forEach(function(raw,i){
+    var ln=i+1,s=raw.trim(),m;
+    if(!s)return;
+    if(s.indexOf("%%")===0){
+      var dv=s.match(/^%%\s*@([\w-]+)\s*(.*)$/);
+      if(!dv)return;
+      var arg=dv[2].trim();
+      if(dv[1]==="oai-doc"){
+        if(oaiDoc)issues.push({lvl:"warn",t:"Line "+ln+": second @oai-doc ignored"});
+        else{oaiDoc=arg;if(stmts)issues.push({lvl:"warn",t:"Line "+ln+": @oai-doc should come before the diagram statements"})}
+        if(!arg)issues.push({lvl:"err",t:"Line "+ln+": @oai-doc needs a file path or URL"});
+      }else if(dv[1]==="api"){
+        var ref=arg.split(/\s+/)[0];
+        if(!ref){issues.push({lvl:"warn",t:"Line "+ln+": @api needs a key, e.g. %% @api A1"});return}
+        if(pending)issues.push({lvl:"warn",t:"Line "+pending.line+": @api "+pending.ref+" has no arrow before the next @api, ignored"});
+        pending={ref:ref,line:ln};
+      }else issues.push({lvl:"warn",t:"Line "+ln+": unknown directive @"+dv[1]});
+      return;
+    }
+    stmts++;
+    if(/^sequenceDiagram\b/.test(s)){seen=true;return}
+    if(/^(title|accTitle|accDescr)\b/.test(s)){var t=s.replace(/^(title|accTitle|accDescr)\s*:?\s*/,"");if(/^title/.test(s))root.title=t;return}
+    if((m=s.match(/^(participant|actor)\s+(.+?)(?:\s+as\s+(.+))?$/))){part(m[2],m[3]&&m[3].trim(),m[1]==="actor");return}
+    if(/^autonumber\b/.test(s)){auto=true;return}
+    if(/^(activate|deactivate|destroy|create|box|links?)\b/.test(s)){if(/^box\b/.test(s)){var b0={kind:"block",type:"box",label:"",children:[],line:ln};cur.children.push(b0);stack.push(cur);cur=b0}return}
+    if((m=s.match(/^(rect|opt|alt|loop|par|critical|break)\b\s*(.*)$/))){
+      var b={kind:"block",type:m[1],label:m[2].trim(),children:[],line:ln};cur.children.push(b);stack.push(cur);cur=b;return}
+    if((m=s.match(/^(else|and|option)\b\s*(.*)$/))){
+      if(cur.kind==="block")cur.children.push({kind:"divider",label:m[2].trim(),line:ln});
+      else issues.push({lvl:"warn",t:"Line "+ln+": '"+m[1]+"' outside a block"});
+      return}
+    if(s==="end"){if(stack.length)cur=stack.pop();else issues.push({lvl:"warn",t:"Line "+ln+": extra 'end'"});return}
+    if((m=s.match(/^note\s+(over|left of|right of)\s+([^:]+):\s*(.*)$/i))){
+      var ps=m[2].split(",").map(function(x){return part(x)});
+      cur.children.push({kind:"note",pos:m[1].toLowerCase(),parts:ps,text:m[3],line:ln});return}
+    if((m=s.match(reMsg))){
+      var a=m[2];
+      cur.children.push({kind:"msg",from:part(m[1]),to:part(m[4]),arrow:a,dashed:a.indexOf("--")===0,
+        head:/>>$/.test(a)?"fill":/x$/.test(a)?"cross":/\)$/.test(a)?"open":"none",text:m[5],line:ln,
+        ref:pending?pending.ref:null,refLine:pending?pending.line:null});
+      pending=null;
+      return}
+    issues.push({lvl:"warn",t:"Line "+ln+": not understood, skipped: "+s.slice(0,80)});
+  });
+  if(pending)issues.push({lvl:"warn",t:"Line "+pending.line+": @api "+pending.ref+" is not followed by an arrow"});
+  if(stack.length)issues.push({lvl:"warn",t:"A block is missing its 'end' (opened on line "+cur.line+")"});
+  if(!seen)issues.push({lvl:"err",t:"No 'sequenceDiagram' line found. Only Mermaid sequence diagrams are supported."});
+  var n=0;(function num(list){list.forEach(function(it){if(it.kind==="msg"){it.n=++n}if(it.children)num(it.children)})})(root.children);
+  return {parts:parts,root:root,issues:issues,auto:auto,oaiDoc:oaiDoc};
+}
+function brSplit(t){return String(t).split(/<br\s*\/?>/i).map(function(x){return x.trim()})}
+
+/* ================= OpenAPI model ================= */
+var METHODS=["get","put","post","delete","options","head","patch","trace"];
+function makeDeref(spec){
+  return function deref(o,depth){
+    depth=depth||0;
+    while(o&&typeof o==="object"&&typeof o.$ref==="string"&&depth<30){
+      var r=o.$ref;if(r.indexOf("#/")!==0)return {"x-unresolved":r};
+      var cur=spec;r.slice(2).split("/").forEach(function(k){k=decodeURIComponent(k.replace(/~1/g,"/").replace(/~0/g,"~"));cur=cur==null?undefined:cur[k]});
+      if(cur===undefined)return {"x-unresolved":o.$ref};
+      // keep sibling keys (3.1 allows description next to $ref)
+      var sib={};Object.keys(o).forEach(function(k){if(k!=="$ref")sib[k]=o[k]});
+      o=Object.keys(sib).length?Object.assign({},cur,sib):cur;depth++;
+    }
+    return o;
+  };
+}
+function buildModel(spec){
+  var deref=makeDeref(spec),ops=[],issues=[];
+  if(!spec||typeof spec!=="object")throw new Error("The API file did not parse to an object.");
+  if(!spec.openapi&&!spec.swagger)issues.push({lvl:"warn",t:"No 'openapi' version field. Treating it as OpenAPI 3."});
+  if(spec.swagger)issues.push({lvl:"warn",t:"Swagger 2.0 is only partly supported (body parameters and response schemas)."});
+  var tagDesc={};(spec.tags||[]).forEach(function(t){tagDesc[t.name]=t.description||""});
+  function collect(container,isHook){
+    Object.keys(container||{}).forEach(function(key){
+      var item=deref(container[key])||{};
+      METHODS.forEach(function(m){
+        if(!item[m])return;
+        var op=item[m];
+        var params=[].concat(item.parameters||[],op.parameters||[]).map(function(p){return deref(p)});
+        var seenP={};params=params.reverse().filter(function(p){var k=p.in+":"+p.name;if(seenP[k])return false;seenP[k]=1;return true}).reverse();
+        ops.push({op:op,method:m.toUpperCase(),path:key,hook:isHook,params:params,
+          id:op.operationId||(m+" "+key),tag:op["x-diagram-tag"]?String(op["x-diagram-tag"]):"",idx:ops.length});
+      });
+    });
+  }
+  collect(spec.paths,false);collect(spec.webhooks,true);
+  if(spec["x-webhooks"])collect(spec["x-webhooks"],true);
+  var k=0;ops.forEach(function(o){if(!o.tag)o.tag="E"+(++k);o.key=o.id.replace(/[^A-Za-z0-9_-]/g,"_")});
+  var dupTags={},expl={};ops.forEach(function(o){var t=o.op["x-diagram-tag"];if(t!=null){t=String(t).toLowerCase();(expl[t]=expl[t]||[]).push(o)}});
+  Object.keys(expl).forEach(function(t){if(expl[t].length>1){dupTags[t]=1;issues.push({lvl:"err",t:"x-diagram-tag "+expl[t][0].tag+" is on "+expl[t].length+" operations ("+expl[t].map(function(o){return o.id}).join(", ")+"). It must be unique in the spec."})}});
+  var idCount={};ops.forEach(function(o){if(o.op.operationId)idCount[o.op.operationId]=(idCount[o.op.operationId]||0)+1});
+  Object.keys(idCount).forEach(function(i){if(idCount[i]>1)issues.push({lvl:"err",t:"operationId "+i+" is used "+idCount[i]+" times (OpenAPI requires it to be unique)."})});
+  if(!ops.length)issues.push({lvl:"err",t:"No operations found under paths or webhooks."});
+  return {spec:spec,deref:deref,ops:ops,tagDesc:tagDesc,issues:issues,dupTags:dupTags};
+}
+
+/* ================= link arrows to operations ================= */
+function pathRegex(p){
+  return new RegExp("^"+p.replace(/[.*+?^$()|[\]\\]/g,"\\$&").replace(/\\?\{[^}]+\\?\}/g,"[^/]+")+"$");
+}
+function normTpl(p){return p.replace(/\{[^}]+\}/g,"{}").replace(/\/+$/,"")}
+function matchPath(model,method,txt){
+  txt=txt.replace(/[),.;，。]+$/,"");var tail=null;
+  var mm=txt.match(/^(?:…|\.\.\.)(\/.*)$/);if(mm){tail=normTpl(mm[1])}
+  var hits=model.ops.filter(function(o){
+    if(o.hook||o.method!==method)return false;
+    var sp=normTpl(o.path);
+    if(tail)return sp.slice(-tail.length)===tail;
+    if(normTpl(txt)===sp)return true;
+    var base=txt.split("?")[0];
+    return pathRegex(o.path).test(base);
+  });
+  return hits.length===1?hits[0]:hits[0]||null;
+}
+function linkMessages(seq,model){
+  var issues=[],msgs=[],byTag={},byId={},legacy=null;
+  model.ops.forEach(function(o){if(!byTag[o.tag.toLowerCase()])byTag[o.tag.toLowerCase()]=o;byId[o.id.toLowerCase()]=o});
+  (function walk(l){l.forEach(function(it){if(it.kind==="msg")msgs.push(it);if(it.children)walk(it.children)})})(seq.root.children);
+  msgs.forEach(function(msg){
+    var t=msg.text,m=t.match(/^\s*\[([^\]]+)\]\s*/);
+    msg.label=t;
+    if(msg.ref){
+      var rk=msg.ref.toLowerCase(),ro=null;
+      if(model.dupTags[rk])issues.push({lvl:"err",t:"Line "+msg.refLine+": @api "+msg.ref+" is ambiguous (that x-diagram-tag is not unique)"});
+      else{ro=byTag[rk]&&byTag[rk].op["x-diagram-tag"]!=null?byTag[rk]:(byId[rk]||null);
+        if(ro){msg.op=ro;msg.how="tag"}
+        else issues.push({lvl:"warn",t:"Line "+msg.refLine+": @api "+msg.ref+" matches no x-diagram-tag or operationId in the spec"})}
+      if(m)msg.label=t.slice(m[0].length);
+    }
+    else if(m){
+      var key=m[1].trim().toLowerCase();var o=byTag[key]||byId[key];
+      msg.label=t.slice(m[0].length);
+      if(o){msg.op=o;msg.how="tag";(legacy=legacy||[]).push(msg.line)}
+      else issues.push({lvl:"warn",t:"Line "+msg.line+": tag ["+m[1]+"] matches no operation"});
+    }
+    if(!msg.op&&!msg.ref){
+      var pm=msg.label.replace(/<br\s*\/?>/gi," ").match(/\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+((?:…|\.\.\.)?\/[^\s<]*)/);
+      if(pm){var o2=matchPath(model,pm[1],pm[2]);
+        if(o2){msg.op=o2;msg.how="path";issues.push({lvl:"guess",t:"Line "+msg.line+": linked to "+o2.tag+" ("+o2.id+") by matching \""+pm[1]+" "+pm[2]+"\""})}
+        else issues.push({lvl:"warn",t:"Line "+msg.line+": \""+pm[1]+" "+pm[2]+"\" matches no path in the spec"})}
+    }
+  });
+  if(legacy)issues.push({lvl:"info2",t:legacy.length+" arrows use the old inline [tag] (lines "+legacy.join(", ")+"). A '%% @api <tag>' line above each arrow keeps the label clean in other Mermaid viewers."});
+  // replies: untagged dashed message reversing the previous linked call
+  msgs.forEach(function(msg,i){
+    if(msg.op||!msg.dashed||i===0)return;
+    var prev=msgs[i-1];
+    if(prev.op&&!prev.dashed&&prev.from===msg.to&&prev.to===msg.from){
+      msg.op=prev.op;msg.how="reply";
+      issues.push({lvl:"guess",t:"Line "+msg.line+": reply linked to "+prev.op.tag+" because it answers the call on line "+prev.line});
+    }
+  });
+  var used={};msgs.forEach(function(m){if(m.op){(used[m.op.key]=used[m.op.key]||[]).push(m)}});
+  model.ops.forEach(function(o){o.msgs=used[o.key]||[];if(!o.msgs.length)issues.push({lvl:"info",t:o.tag+" "+o.method+" "+o.path+" ("+o.id+") is not in the diagram"})});
+  return issues;
+}
+
+/* ================= text measuring ================= */
+var mctx=document.createElement("canvas").getContext("2d");
+function tw(t,font){mctx.font=font;return mctx.measureText(t).width}
+var F_LBL="500 14px "+getComputedStyle(document.documentElement).getPropertyValue("--font-body");
+var F_NOTE="400 13px "+getComputedStyle(document.documentElement).getPropertyValue("--font-body");
+var F_AN="700 16px "+getComputedStyle(document.documentElement).getPropertyValue("--font-body");
+var F_AS="400 11.5px "+getComputedStyle(document.documentElement).getPropertyValue("--font-body");
+var F_TAG="700 11px "+getComputedStyle(document.documentElement).getPropertyValue("--font-body");
+function maxW(lines,font){return lines.reduce(function(a,l){return Math.max(a,tw(l,font))},0)}
+
+/* ================= sequence renderer ================= */
+function renderSeq(seq){
+  var P=seq.parts,n=P.length;
+  if(!n)return {svg:'<svg id="seq" width="400" height="80"><text x="20" y="40">No participants</text></svg>',w:400,h:80};
+  var box=P.map(function(p){var l=brSplit(p.label);var w=Math.max(130,tw(l[0],F_AN)+28,maxW(l.slice(1),F_AS)+24);return {lines:l,w:w}});
+  var actH=box.some(function(b){return b.lines.length>1})?62:46;
+  var gap=[];for(var i=0;i<n-1;i++)gap[i]=Math.max(box[i].w/2+box[i+1].w/2+40,150);
+  var rightExtra=40;
+  function tagW(o){return o?Math.max(28,tw(o.tag,F_TAG)+14)+8:0}
+  (function walk(l){l.forEach(function(it){
+    if(it.kind==="msg"){
+      var lines=brSplit(it.label);if(seq.auto)lines[0]=it.n+". "+lines[0];var w=maxW(lines,F_LBL)+tagW(it.op)+40;it._lines=lines;
+      if(it.from===it.to){var need=w+30;if(it.from<n-1)gap[it.from]=Math.max(gap[it.from],need);else rightExtra=Math.max(rightExtra,need)}
+      else{var lo=Math.min(it.from,it.to),hi=Math.max(it.from,it.to),cur=0;for(var j=lo;j<hi;j++)cur+=gap[j];
+        if(cur<w){var add=(w-cur)/(hi-lo);for(var j2=lo;j2<hi;j2++)gap[j2]+=add}}
+    }
+    if(it.kind==="note"){it._lines=brSplit(it.text);it._w=maxW(it._lines,F_NOTE)+28;
+      if(it.pos==="right of"&&it.parts[0]<n-1)gap[it.parts[0]]=Math.max(gap[it.parts[0]],it._w+30);
+      if(it.pos==="left of"&&it.parts[0]>0)gap[it.parts[0]-1]=Math.max(gap[it.parts[0]-1],it._w+30);
+    }
+    if(it.children)walk(it.children);
+  })})(seq.root.children);
+  var X=[box[0].w/2+10];for(var k=1;k<n;k++)X[k]=X[k-1]+gap[k-1];
+  var fullL=X[0]-box[0].w/2,fullR=X[n-1]+Math.max(box[n-1].w/2,rightExtra);
+  var bg=[],fg=[],y=actH+10+34,minX=fullL,maxX=fullR,mi=0;
+  function bound(a,b){minX=Math.min(minX,a);maxX=Math.max(maxX,b)}
+  function involved(list,acc){list.forEach(function(it){if(it.kind==="msg"){acc.push(it.from,it.to)}if(it.kind==="note")acc.push.apply(acc,it.parts);if(it.children)involved(it.children,acc)});return acc}
+  function isWide(note){if(note.parts.length<2)return false;var a=Math.min.apply(null,note.parts),b=Math.max.apply(null,note.parts);return a===0&&b===n-1}
+  function rectWarn(label){var m=String(label).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);if(!m)return false;var r=+m[1],g=+m[2],b=+m[3];return r-g>12&&r-b>12}
+  function arrowMarker(it,api){
+    if(it.head==="fill")return api?"url(#ar-api)":"url(#ar)";
+    if(it.head==="open")return api?"url(#ao-api)":"url(#ao)";
+    if(it.head==="cross")return api?"url(#ax-api)":"url(#ax)";
+    return "";
+  }
+  function walk(list,ctx){
+    list.forEach(function(it,idx){
+      if(it.kind==="block"&&it.type==="rect"){
+        var warn=rectWarn(it.label)||ctx.warn,y0=y,first=it.children[0],rest=it.children,title="";
+        if(first&&first.kind==="note"&&isWide(first)){title=first.text;rest=it.children.slice(1)}
+        y+=4;
+        if(title){bg.push('<rect class="band'+(warn?" warn":"")+'" x="'+(fullL)+'" y="'+y+'" width="'+(fullR-fullL)+'" height="26" rx="4"/><text class="bandt'+(warn?" warn":"")+'" x="'+(fullL+14)+'" y="'+(y+18)+'">'+esc(brSplit(title).join(" "))+'</text>');y+=38}
+        else y+=8;
+        walk(rest,{warn:warn});
+        y+=8;
+        if(!title)bg.push('<rect class="region" x="'+fullL+'" y="'+y0+'" width="'+(fullR-fullL)+'" height="'+(y-y0)+'" rx="6"/>');
+        return;
+      }
+      if(it.kind==="block"&&it.type==="box"){walk(it.children,ctx);return}
+      if(it.kind==="block"){
+        var inv=involved(it.children,[]);var a=inv.length?Math.min.apply(null,inv):0,b=inv.length?Math.max.apply(null,inv):n-1;
+        var fx0=X[a]-Math.min(box[a].w/2,90)+(ctx.depth||0)*6,fx1=X[b]+Math.min(box[b].w/2,90)-(ctx.depth||0)*6;
+        // make room for self messages / labels to the right
+        (function(l){l.forEach(function(c){if(c.kind==="msg"&&c.from===c.to){fx1=Math.max(fx1,X[c.from]+maxW(c._lines,F_LBL)+70)}})})(it.children);
+        var fy0=y;y+=30;
+        var kw=tw(it.type,"700 12px sans-serif")+18;
+        var frag=[],divs=[];
+        walk(it.children.filter(function(c){return c.kind!=="divider"||true}),{warn:ctx.warn,depth:(ctx.depth||0)+1,divs:divs,frame:[fx0,fx1]});
+        y+=6;
+        frag.push('<g class="frag"><rect class="fr" x="'+fx0+'" y="'+fy0+'" width="'+(fx1-fx0)+'" height="'+(y-fy0)+'" rx="3"/>');
+        frag.push('<path d="M'+fx0+','+fy0+' h'+kw+' v14 l-8,8 h-'+(kw-8)+' z"/><text class="fk" x="'+(fx0+7)+'" y="'+(fy0+16)+'">'+esc(it.type)+'</text>');
+        if(it.label)frag.push('<text x="'+(fx0+kw+8)+'" y="'+(fy0+16)+'">['+esc(it.label)+']</text>');
+        divs.forEach(function(d){frag.push('<line x1="'+fx0+'" y1="'+d.y+'" x2="'+fx1+'" y2="'+d.y+'"/>'+(d.label?'<text x="'+(fx0+8)+'" y="'+(d.y+16)+'">['+esc(d.label)+']</text>':''))});
+        frag.push('</g>');
+        fg.push(frag.join(""));bound(fx0,fx1);
+        y+=8;return;
+      }
+      if(it.kind==="divider"){if(ctx.divs)ctx.divs.push({y:y,label:it.label});y+=26;return}
+      if(it.kind==="note"){
+        var lines=it._lines,h=lines.length*19+14,w=it._w,cx,warnN=ctx.warn;
+        if(it.parts.length>1){var pa=Math.min.apply(null,it.parts),pb=Math.max.apply(null,it.parts);var span=X[pb]-X[pa]+60;w=Math.max(w,isWide(it)?Math.min(span,Math.max(w,span*0.82)):span);cx=(X[pa]+X[pb])/2}
+        else if(it.pos==="left of"){cx=X[it.parts[0]]-14-w/2}
+        else if(it.pos==="right of"){cx=X[it.parts[0]]+14+w/2}
+        else cx=X[it.parts[0]];
+        var s='<g class="note'+(warnN?" warn":"")+'"><rect x="'+(cx-w/2)+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="6"/>';
+        lines.forEach(function(l,i){s+='<text x="'+cx+'" y="'+(y+21+i*19)+'">'+esc(l)+'</text>'});
+        fg.push(s+'</g>');bound(cx-w/2,cx+w/2);y+=h+12;return;
+      }
+      if(it.kind==="msg"){
+        var lines2=it._lines,api=!!it.op,cls="msg"+(api?" api":" plain")+(it.dashed?" ret":"")+(api&&it.how!=="tag"?" guess":"")+(it.from===it.to?" self":"");
+        var x1=X[it.from],x2=X[it.to],lh=lines2.length*18,top=y,ay=y+lh+8,tagw=api?Math.max(28,tw(it.op.tag,F_TAG)+14):0;
+        var g='<g class="'+cls+'" data-mi="'+mi+'"'+(api?' data-op="'+it.op.key+'" tabindex="0" role="button" aria-label="'+esc(it.op.tag+" "+lines2.join(" "))+'"':'')+(api&&it.how!=="tag"?' data-how="'+it.how+'"':'')+'>';
+        var lbX,hx0,hx1,mk=arrowMarker(it,api),mkA=mk?' marker-end="'+mk+'"':"";
+        if(it.from===it.to){
+          lbX=x1+16;hx0=x1-6;hx1=x1+maxW(lines2,F_LBL)+tagW(it.op)+30;
+          g+='<rect class="hit" x="'+hx0+'" y="'+(top-4)+'" width="'+(hx1-hx0)+'" height="'+(lh+40)+'" rx="4"/>';
+          lines2.forEach(function(l,i){g+='<text class="lbl" x="'+lbX+'" y="'+(top+15+i*18)+'">'+esc(l)+'</text>'});
+          if(api){var tx=lbX+tw(lines2[0],F_LBL)+8;g+='<g class="tag"><rect x="'+tx+'" y="'+(top+2)+'" width="'+tagw+'" height="18" rx="9"/><text x="'+(tx+tagw/2)+'" y="'+(top+15)+'">'+esc(it.op.tag)+'</text></g>'}
+          g+='<path class="ln" d="M'+x1+','+ay+' h36 v22 h-34"'+mkA+'/>';
+          y=ay+34;bound(hx0,hx1);
+        }else{
+          var cx2=(x1+x2)/2,lo=Math.min(x1,x2),hi=Math.max(x1,x2);
+          var lw=maxW(lines2,F_LBL)+(api?tagw+10:0);
+          hx0=Math.min(lo-6,cx2-lw/2-8);hx1=Math.max(hi+6,cx2+lw/2+8);
+          g+='<rect class="hit" x="'+hx0+'" y="'+(top-2)+'" width="'+(hx1-hx0)+'" height="'+(lh+18)+'" rx="4"/>';
+          var sh=api?(tagw+8)/2:0;
+          lines2.forEach(function(l,i){g+='<text class="lbl" x="'+(i===0?cx2-sh:cx2)+'" y="'+(top+15+i*18)+'">'+esc(l)+'</text>'});
+          if(api){var tx2=cx2-sh+tw(lines2[0],F_LBL)/2+8;g+='<g class="tag"><rect x="'+tx2+'" y="'+(top+2)+'" width="'+tagw+'" height="18" rx="9"/><text x="'+(tx2+tagw/2)+'" y="'+(top+15)+'">'+esc(it.op.tag)+'</text></g>';bound(hx0,tx2+tagw)}
+          var endX=x2+(x2>x1?-2:2);
+          g+='<line class="ln" x1="'+x1+'" y1="'+ay+'" x2="'+endX+'" y2="'+ay+'"'+mkA+'/>';
+          y=ay+18;bound(hx0,hx1);
+        }
+        fg.push(g+'</g>');it._mi=mi;mi++;return;
+      }
+    });
+  }
+  walk(seq.root.children,{});
+  var H=y+20;
+  var life=X.map(function(x){return '<line class="life" x1="'+x+'" y1="'+(actH+10)+'" x2="'+x+'" y2="'+H+'"/>'}).join("");
+  var acts=P.map(function(p,i){var b=box[i],x=X[i];var s='<g class="actor"><rect x="'+(x-b.w/2)+'" y="10" width="'+b.w+'" height="'+actH+'" rx="4"/>';
+    if(b.lines.length>1){s+='<text class="an" x="'+x+'" y="38">'+esc(b.lines[0])+'</text><text class="as" x="'+x+'" y="58">'+esc(b.lines.slice(1).join(" · "))+'</text>'}
+    else s+='<text class="an" x="'+x+'" y="'+(10+actH/2+6)+'">'+esc(b.lines[0])+'</text>';
+    return s+'</g>'}).join("");
+  var ox=10-minX,W=Math.ceil(maxX-minX+20),Ht=Math.ceil(H+6);
+  var defs='<defs>'+
+    '<marker id="ar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path class="mk" d="M0,0 L10,4 L0,8 z"/></marker>'+
+    '<marker id="ar-api" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path class="mk-api" d="M0,0 L10,4 L0,8 z"/></marker>'+
+    '<marker id="ao" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path class="mko" d="M1,1 L9,5 L1,9"/></marker>'+
+    '<marker id="ao-api" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path class="mko-api" d="M1,1 L9,5 L1,9"/></marker>'+
+    '<marker id="ax" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><path class="mko" d="M1,1 L9,9 M9,1 L1,9"/></marker>'+
+    '<marker id="ax-api" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto"><path class="mko-api" d="M1,1 L9,9 M9,1 L1,9"/></marker></defs>';
+  var svg='<svg id="seq" width="'+W+'" height="'+Ht+'" viewBox="0 0 '+W+' '+Ht+'" role="img" aria-label="Sequence diagram">'+defs+'<g id="seqg" transform="translate('+ox+',0)">'+life+bg.join("")+acts+fg.join("")+'</g></svg>';
+  return {svg:svg,w:W,h:Ht,ox:ox};
+}
+
+/* ================= card content ================= */
+function mdLite(src){
+  if(!src)return "";
+  var out=[],lines=String(src).replace(/\r/g,"").split("\n"),i=0,para=[],list=null;
+  function inl(t){return esc(t).replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')}
+  function flush(){if(para.length){out.push("<p>"+inl(para.join(" "))+"</p>");para=[]}if(list){out.push("<ul>"+list.map(function(x){return "<li>"+inl(x)+"</li>"}).join("")+"</ul>");list=null}}
+  while(i<lines.length){
+    var l=lines[i];
+    if(/^\s*```/.test(l)){flush();var code=[];i++;while(i<lines.length&&!/^\s*```/.test(lines[i])){code.push(lines[i]);i++}i++;out.push(codeBlock(code.join("\n").replace(/^\n+|\n+$/g,""),""));continue}
+    var m=l.match(/^\s*[-*]\s+(.*)$/);
+    if(m){if(para.length){out.push("<p>"+inl(para.join(" "))+"</p>");para=[]}(list=list||[]).push(m[1]);i++;continue}
+    if(!l.trim()){flush();i++;continue}
+    if(list&&/^\s{2,}\S/.test(l)){list[list.length-1]+=" "+l.trim();i++;continue}
+    var h=l.match(/^#{1,6}\s+(.*)$/);if(h){flush();out.push("<h4>"+inl(h[1])+"</h4>");i++;continue}
+    if(list){flush()}
+    para.push(l.trim());i++;
+  }
+  flush();return out.join("");
+}
+function codeBlock(code,cap){return '<div class="code"><button class="copy" type="button">Copy</button><pre>'+esc(code)+'</pre>'+(cap?'<p class="cap">'+esc(cap)+'</p>':'')+'</div>'}
+function typeStr(s,deref){
+  s=deref(s)||{};
+  if(s["x-unresolved"])return "ref "+s["x-unresolved"];
+  var t=Array.isArray(s.type)?s.type.join("|"):s.type;
+  if(!t){if(s.properties)t="object";else if(s.items)t="array";else if(s.oneOf)t="oneOf";else if(s.anyOf)t="anyOf";else if(s.allOf)t="allOf";else if(s.enum)t="enum";else t="any"}
+  if(t==="array"&&s.items){t=typeStr(s.items,deref)+"[]"}
+  if(s.format)t+=" ("+s.format+")";
+  if(s.const!==undefined)t+=" = "+JSON.stringify(s.const);
+  if(s.enum)t+=": "+s.enum.slice(0,8).join(" | ")+(s.enum.length>8?" …":"");
+  return t;
+}
+function mergeAllOf(s,deref){
+  s=deref(s);if(!s||!s.allOf)return s;
+  var r=Object.assign({},s);delete r.allOf;r.properties=Object.assign({},r.properties);r.required=(r.required||[]).slice();
+  s.allOf.forEach(function(p){p=mergeAllOf(p,deref)||{};Object.assign(r.properties,p.properties||{});r.required=r.required.concat(p.required||[]);if(!r.type&&p.type)r.type=p.type});
+  return r;
+}
+function sample(s,deref,d){
+  d=d||0;s=mergeAllOf(s,deref);if(!s)return null;
+  if(s.example!==undefined)return s.example;
+  if(Array.isArray(s.examples)&&s.examples.length)return s.examples[0];
+  if(s.const!==undefined)return s.const;
+  if(s.default!==undefined)return s.default;
+  if(s.enum&&s.enum.length)return s.enum[0];
+  if(s.oneOf||s.anyOf)return sample((s.oneOf||s.anyOf)[0],deref,d+1);
+  if(d>6)return "…";
+  var t=Array.isArray(s.type)?s.type.filter(function(x){return x!=="null"})[0]:s.type;
+  if(!t){t=s.properties?"object":s.items?"array":null}
+  if(t==="object"){var o={};Object.keys(s.properties||{}).forEach(function(k){o[k]=sample(s.properties[k],deref,d+1)});return o}
+  if(t==="array")return s.items?[sample(s.items,deref,d+1)]:[];
+  if(t==="string")return "<"+(s.format||"string")+">";
+  if(t==="integer"||t==="number")return 0;
+  if(t==="boolean")return true;
+  return null;
+}
+function fieldRows(s,deref,prefix,d,rows){
+  s=mergeAllOf(s,deref);if(!s||d>3)return rows;
+  if(s.items&&!s.properties){return fieldRows(s.items,deref,prefix+"[]",d+1,rows)}
+  var req=s.required||[];
+  Object.keys(s.properties||{}).forEach(function(k){
+    var p=deref(s.properties[k])||{},name=prefix?prefix+"."+k:k;
+    rows.push({name:name,type:typeStr(p,deref),req:req.indexOf(k)>=0,desc:p.description||(p.title||"")});
+    var pm=mergeAllOf(p,deref)||{};
+    if(pm.properties)fieldRows(pm,deref,name,d+1,rows);
+    else if(pm.items){var it=mergeAllOf(pm.items,deref);if(it&&it.properties)fieldRows(it,deref,name+"[]",d+1,rows)}
+  });
+  return rows;
+}
+function fieldsTable(rows){
+  if(!rows.length)return "";
+  return '<table class="tbl"><tr><th>Field</th><th>Type</th><th>Notes</th></tr>'+rows.map(function(r){
+    return '<tr><td class="k">'+esc(r.name)+(r.req?' <span class="req" title="required">*</span>':'')+'</td><td>'+esc(r.type)+'</td><td>'+esc(String(r.desc).split("\n")[0])+'</td></tr>'}).join("")+'</table>';
+}
+function isUndef(s,deref){s=deref(s);return !!(s&&s["x-undefined"])}
+function pickContent(content){
+  if(!content)return null;var ks=Object.keys(content);if(!ks.length)return null;
+  var k=ks.filter(function(x){return /json/.test(x)})[0]||ks[0];return {type:k,media:content[k]};
+}
+function mediaExample(mt,deref){
+  var m=mt.media||{};
+  if(m.example!==undefined)return {v:m.example,from:"spec"};
+  if(m.examples){var e=deref(m.examples[Object.keys(m.examples)[0]]);if(e&&e.value!==undefined)return {v:e.value,from:"spec"}}
+  var s=deref(m.schema);
+  if(s&&s.example!==undefined)return {v:s.example,from:"spec"};
+  var g=sample(m.schema,deref);
+  return {v:g,from:"schema"};
+}
+function errorCodes(s,deref){
+  s=mergeAllOf(s,deref);if(!s||!s.properties)return null;
+  for(var k in s.properties){var p=deref(s.properties[k]);if(p&&Array.isArray(p.enum)&&p.enum.length){
+    var d=String(p.description||""),rows=p.enum.map(function(v){var m=d.split("\n").filter(function(l){return l.trim().indexOf(String(v))===0})[0];return [String(v),m?m.trim().slice(String(v).length).replace(/^[\s:：\-–]+/,""):""]});
+    return {field:k,rows:rows};}}
+  return null;
+}
+function statusText(c){var t={"200":"OK","201":"Created","202":"Accepted","204":"No Content","400":"Bad Request","401":"Unauthorized","403":"Forbidden","404":"Not Found","409":"Conflict","422":"Unprocessable","429":"Too Many Requests","500":"Server Error"};return t[c]||""}
+function secInfo(model,o){
+  var spec=model.spec,sec=o.op.security!==undefined?o.op.security:spec.security,schemes=(spec.components&&spec.components.securitySchemes)||spec.securityDefinitions||{};
+  if(!sec)return ["Not stated in the spec"];
+  if(!sec.length)return [o.hook?"None stated at the HTTP level (see the description)":"None (public)"];
+  var out=[];sec.forEach(function(req){var names=Object.keys(req);
+    if(!names.length){out.push("Optional (anonymous allowed)");return}
+    out.push(names.map(function(nm){var s=model.deref(schemes[nm])||{};var t=s.type||"?";
+      if(s.type==="http")t="HTTP "+(s.scheme||"")+(s.bearerFormat?" ("+s.bearerFormat+")":"");
+      if(s.type==="apiKey")t="API key in "+s.in+" '"+s.name+"'";
+      if(s.type==="oauth2")t="OAuth2 "+Object.keys(s.flows||{}).join(", ");
+      var sc=req[nm]&&req[nm].length?" scopes: "+req[nm].join(", "):"";
+      return "<b>"+esc(nm)+"</b>: "+esc(t+sc)+(s.description?" — "+esc(s.description):"")}).join(" + "));
+  });return out;
+}
+function cardBody(model,o,seq){
+  var op=o.op,deref=model.deref,h="";
+  if(op.deprecated)h+='<p class="callout">Deprecated.</p>';
+  if(op.description)h+=mdLite(op.description);
+  h+='<dl class="meta"><dt>Operation</dt><dd><code>'+esc(o.id)+'</code></dd>';
+  if(op.tags&&op.tags.length)h+='<dt>Group</dt><dd>'+op.tags.map(function(t){return esc(t)+(model.tagDesc[t]?' <span style="color:var(--ink-3)">· '+esc(model.tagDesc[t])+'</span>':'')}).join("<br>")+'</dd>';
+  if(o.msgs.length){
+    var m0=o.msgs[0];
+    h+='<dt>In diagram</dt><dd>'+esc(brSplit(seq.parts[m0.from].label)[0])+' → '+esc(brSplit(seq.parts[m0.to].label)[0])+'<div class="steps">'+o.msgs.map(function(m){return '<button type="button" data-goto="'+m._mi+'">'+(m.how!=="tag"?"≈ ":"↖ ")+esc(brSplit(m.label).join(" "))+'</button>'}).join("")+'</div></dd>';
+  }else h+='<dt>In diagram</dt><dd>Not drawn in the diagram</dd>';
+  h+='</dl>';
+  h+='<h3>Auth</h3><ul>'+secInfo(model,o).map(function(x){return "<li>"+x+"</li>"}).join("")+'</ul>';
+  var params=o.params.filter(function(p){return p.in!=="body"});
+  if(params.length){
+    h+='<h3>Parameters</h3><table class="tbl"><tr><th>Name</th><th>In</th><th>Type</th><th>Notes</th></tr>'+params.map(function(p){
+      var ex=p.example!==undefined?p.example:(p.schema&&deref(p.schema).example);
+      return '<tr><td class="k">'+esc(p.name)+(p.required?' <span class="req" title="required">*</span>':'')+'</td><td>'+esc(p.in)+'</td><td>'+esc(typeStr(p.schema||p,deref))+'</td><td>'+esc(p.description||"")+(ex!==undefined?(p.description?" ":"")+"e.g. "+esc(ex):"")+'</td></tr>'}).join("")+'</table>';
+  }
+  // request
+  var rb=deref(op.requestBody),bodyParam=o.params.filter(function(p){return p.in==="body"})[0],reqMt=null;
+  if(rb)reqMt=pickContent(rb.content);
+  else if(bodyParam)reqMt={type:"application/json",media:{schema:bodyParam.schema}};
+  if(reqMt){
+    var rs=deref(reqMt.media.schema),ex=mediaExample(reqMt,deref);
+    h+='<h3>Request body'+(rb&&rb.required?' (required)':'')+'</h3>';
+    if(isUndef(reqMt.media.schema,deref))h+='<p class="callout">Not fully defined yet (x-undefined).'+(rs&&rs.description?" "+esc(rs.description):"")+'</p>';
+    var head=(o.hook?"POST <your webhook URL>":o.method+" "+o.path);
+    params.filter(function(p){return p.in==="header"}).forEach(function(p){var e=p.example!==undefined?p.example:sample(p.schema,deref);head+="\n"+p.name+": "+e});
+    head+="\nContent-Type: "+reqMt.type;
+    h+=codeBlock(head+"\n\n"+(typeof ex.v==="string"?ex.v:JSON.stringify(ex.v,null,2)),ex.from==="spec"?"Example from the spec":"Generated from the schema (placeholder values)");
+    h+=fieldsTable(fieldRows(reqMt.media.schema,deref,"",0,[]));
+  }
+  // responses
+  var rsp=op.responses||{},codes=Object.keys(rsp);
+  if(codes.length){
+    h+='<h3>Responses</h3>';
+    codes.forEach(function(c){
+      var r=deref(rsp[c])||{},mt=pickContent(r.content)||(r.schema?{type:"application/json",media:{schema:r.schema}}:null);
+      var ok=/^[23]/.test(c);
+      h+='<h4>'+esc(c)+(statusText(c)?" "+statusText(c):"")+'</h4>';
+      if(r.description)h+=mdLite(r.description);
+      if(!mt)return;
+      var undef=isUndef(mt.media.schema,deref);
+      if(ok){
+        if(undef){h+='<p class="callout">Response fields not defined yet (x-undefined).</p>'}
+        else{var ex2=mediaExample(mt,deref);h+=codeBlock(JSON.stringify(ex2.v,null,2),ex2.from==="spec"?"Example from the spec":"Generated from the schema (placeholder values)");h+=fieldsTable(fieldRows(mt.media.schema,deref,"",0,[]))}
+      }else{
+        var ec=errorCodes(mt.media.schema,deref);
+        if(ec)h+='<table class="tbl"><tr><th>'+esc(ec.field)+'</th><th>Meaning</th></tr>'+ec.rows.map(function(e){return '<tr><td class="k">'+esc(e[0])+'</td><td>'+esc(e[1])+'</td></tr>'}).join("")+'</table>';
+        else h+=fieldsTable(fieldRows(mt.media.schema,deref,"",0,[]));
+      }
+    });
+  }
+  // docs
+  var secs=op["x-doc-sections"],ext=op.externalDocs,links=(model.spec.info&&model.spec.info["x-doc-links"])||{};
+  if((secs&&secs.length)||ext){
+    h+='<h3>Design document</h3><div class="doclinks">';
+    (secs||[]).forEach(function(s){var u=links[s]||links[String(s).split(" ")[0]];h+=u?'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(s)+'</a>':'<span class="chip">'+esc(s)+'</span>'});
+    if(ext&&ext.url)h+='<a href="'+esc(ext.url)+'" target="_blank" rel="noopener">'+esc(ext.description||ext.url)+'</a>';
+    h+='</div>';
+  }
+  return h;
+}
+
+/* ================= canvas ================= */
+var vp=$("vp"),world=$("world"),zv=$("zv");
+var view={tx:20,ty:70,s:.6},pos={},DEF={},cards={},state=null,z=10,selected=null,selMsg={},hover=null;
+var CARD_W=400,CARD_H=500,GAP=24;
+function applyView(){world.style.transform="translate("+view.tx+"px,"+view.ty+"px) scale("+view.s+")";
+  vp.style.backgroundPosition=view.tx+"px "+view.ty+"px";vp.style.backgroundSize=(24*view.s)+"px "+(24*view.s)+"px";zv.textContent=Math.round(view.s*100)+"%"}
+function posKey(){return STORE_POS+(state?state.key:"")}
+function savePos(){if(!state)return;lsSet(posKey(),JSON.stringify({pos:pos,view:view}))}
+function hashStr(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)}
+
+function build(flowSrc,specSrc,names){
+  var seq=parseSeq(flowSrc),spec;
+  try{spec=specSrc.trim().charAt(0)==="{"?JSON.parse(specSrc):(window.jsyaml?jsyaml.load(specSrc):JSON.parse(specSrc))}
+  catch(e){throw new Error("Could not read the API file: "+(e.message||e)+(window.jsyaml?"":"\n(The YAML reader failed to load from cdnjs, so only JSON works offline.)"))}
+  var model=buildModel(spec);
+  var issues=[].concat(seq.issues,model.issues,linkMessages(seq,model));
+  var specName=names&&names.spec?String(names.spec):"";
+  function base(x){return String(x).split(/[?#]/)[0].split(/[\\/]/).pop()}
+  if(!seq.oaiDoc)issues.unshift({lvl:"info2",t:"The diagram has no '%% @oai-doc <file>' line at the top, so it can't say which spec it belongs to"});
+  else if(specName&&base(specName)!==base(seq.oaiDoc))issues.unshift({lvl:"warn",t:"The diagram points to "+seq.oaiDoc+" but the loaded spec is "+specName});
+  var rs=renderSeq(seq);
+  var title=(spec.info&&spec.info.title)||seq.root.title||"Flow and API Viewer";
+  state={specName:specName,seq:seq,model:model,issues:issues,key:hashStr(title+"|"+model.ops.map(function(o){return o.key}).join(",")),title:title};
+  // order cards: first appearance in diagram, then the rest
+  var order=[],seen={};
+  (function walk(l){l.forEach(function(it){if(it.kind==="msg"&&it.op&&!seen[it.op.key]){seen[it.op.key]=1;order.push(it.op)}if(it.children)walk(it.children)})})(seq.root.children);
+  model.ops.forEach(function(o){if(!seen[o.key])order.push(o)});
+  state.order=order;
+  world.innerHTML='<svg id="links" aria-hidden="true"><defs><marker id="lkhd" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path class="hd" d="M0,0 L12,5 L0,10 z"/></marker></defs><g id="lkg"></g></svg>'+
+    '<section class="panel seq" id="p-seq" data-id="seq" tabindex="0" aria-label="Sequence diagram block. Drag to move, arrow keys nudge."><h2>Sequence diagram</h2>'+rs.svg+'</section>';
+  state.ox=rs.ox;cards={};
+  order.forEach(function(o){
+    var c=document.createElement("section");c.className="panel card"+(o.msgs.length?"":" orphan");c.dataset.id=o.key;c.tabIndex=0;
+    c.setAttribute("aria-label",o.tag+" endpoint card. Drag to move.");
+    var title=(o.op.summary||o.id).replace(new RegExp("^"+o.tag.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\s+"),"");
+    var guess=o.msgs.length&&o.msgs.every(function(m){return m.how!=="tag"});
+    c.innerHTML='<div class="ch"><div class="r1"><span class="tg">'+esc(o.tag)+'</span><span class="m">'+(o.hook?"WEBHOOK "+esc(o.method):esc(o.method))+'</span><span class="path">'+esc(o.path)+'</span></div>'+
+      '<div class="r2"><span class="ttl">'+esc(title)+'</span>'+(o.msgs.length?(guess?'<span class="badge" title="Linked by path or reply match, not by an explicit tag">guessed link</span>':'')+'<button class="back" type="button">↖ Diagram</button>':'<span class="badge">not in diagram</span>')+'</div></div><div class="scroll">'+cardBody(model,o,seq)+'</div>';
+    world.appendChild(c);cards[o.key]=c;
+  });
+  $("ttl").textContent=title;
+  var linked=order.filter(function(o){return o.msgs.length}).length;
+  $("sub").textContent=linked+" of "+model.ops.length+" endpoints linked to the diagram. Drag blocks to rearrange; click a tagged arrow to jump to its card.";
+  $("empty").style.display="none";
+  document.title=title+" · Flow and API Viewer";
+  layout();wireAll();renderChecks();
+}
+
+function layout(){
+  var seqEl=$("p-seq"),seqW=seqEl.offsetWidth;
+  DEF={seq:{x:60,y:70}};
+  var linked=state.order.filter(function(o){return o.msgs.length}),orph=state.order.filter(function(o){return !o.msgs.length});
+  linked.forEach(function(o,i){DEF[o.key]={x:60+seqW+60+(i%2)*(CARD_W+GAP),y:70+Math.floor(i/2)*(CARD_H+GAP)}});
+  var rows=Math.ceil(linked.length/2);
+  orph.forEach(function(o,i){DEF[o.key]={x:60+seqW+60+(i%2)*(CARD_W+GAP),y:70+(rows+Math.floor(i/2))*(CARD_H+GAP)+(rows?40:0)}});
+  pos={};for(var k in DEF)pos[k]={x:DEF[k].x,y:DEF[k].y};
+  var saved=null;try{saved=JSON.parse(lsGet(posKey())||"null")}catch(e){}
+  if(saved&&saved.pos)for(var k2 in saved.pos)if(pos[k2]&&typeof saved.pos[k2].x==="number")pos[k2]=saved.pos[k2];
+  for(var k3 in pos)place(k3);
+  var first=state.order[0];selected=first&&first.msgs.length?first.key:null;selMsg={};
+  var h=(location.hash||"").replace(/^#/,"");
+  state.order.forEach(function(o){if(h&&(h.toLowerCase()===o.tag.toLowerCase()||h===o.key))selected=o.key});
+  if(saved&&saved.view&&typeof saved.view.tx==="number"){view=saved.view;applyView()}else{applyView();fit(true)}
+  paint();
+  if(h&&selected)ensureVisible(cardRect(selected));
+}
+function el(id){return id==="seq"?$("p-seq"):cards[id]}
+function place(id){var e=el(id);if(!e)return;e.style.left=pos[id].x+"px";e.style.top=pos[id].y+"px"}
+function svgOff(){var svg=$("seq"),a=svg.getBoundingClientRect(),b=$("p-seq").getBoundingClientRect(),s=view.s;return {l:(a.left-b.left)/s,t:(a.top-b.top)/s}}
+function msgEl(mi){return $("seq").querySelector('.msg[data-mi="'+mi+'"]')}
+function firstMsgOf(key){var o=state.order.filter(function(x){return x.key===key})[0];return o&&o.msgs[0]?o.msgs[0]._mi:null}
+function tagRect(mi){var g=msgEl(mi),r=g&&g.querySelector(".tag rect");if(!r)return null;var off=svgOff();
+  return {x:pos.seq.x+off.l+state.ox+parseFloat(r.getAttribute("x")),y:pos.seq.y+off.t+parseFloat(r.getAttribute("y")),w:parseFloat(r.getAttribute("width")),h:18}}
+function arrowRect(mi){var g=msgEl(mi),r=g&&g.querySelector(".hit");if(!r)return null;var off=svgOff();
+  return {x:pos.seq.x+off.l+state.ox+parseFloat(r.getAttribute("x")),y:pos.seq.y+off.t+parseFloat(r.getAttribute("y")),w:parseFloat(r.getAttribute("width")),h:parseFloat(r.getAttribute("height"))}}
+function drawLink(key){
+  var lkg=$("lkg");if(!lkg)return;lkg.innerHTML="";if(!key||!cards[key])return;
+  var mi=selMsg[key]!=null?selMsg[key]:firstMsgOf(key);if(mi==null)return;
+  var t=tagRect(mi),c=cards[key];if(!t)return;
+  var p=pos[key],cw=c.offsetWidth,ch=c.offsetHeight,sx,sy=t.y+t.h/2,ex,ey,d,k;
+  if(p.x>t.x+t.w){sx=t.x+t.w;ex=p.x;ey=p.y+34;k=Math.max(90,(ex-sx)*.5);d="M"+sx+","+sy+" C"+(sx+k)+","+sy+" "+(ex-k)+","+ey+" "+ex+","+ey}
+  else if(p.x+cw<t.x){sx=t.x;ex=p.x+cw;ey=p.y+34;k=Math.max(90,(sx-ex)*.5);d="M"+sx+","+sy+" C"+(sx-k)+","+sy+" "+(ex+k)+","+ey+" "+ex+","+ey}
+  else{sx=t.x+t.w/2;ex=Math.min(Math.max(sx,p.x+30),p.x+cw-30);var below=p.y>sy;ey=below?p.y:p.y+ch;k=Math.max(90,Math.abs(ey-sy)*.5);d="M"+sx+","+(t.y+(below?t.h:0))+" C"+sx+","+(sy+(below?k:-k))+" "+ex+","+(ey+(below?-k:k))+" "+ex+","+ey}
+  var ns="http://www.w3.org/2000/svg",path=document.createElementNS(ns,"path");path.setAttribute("class","lk");path.setAttribute("d",d);path.setAttribute("marker-end","url(#lkhd)");lkg.appendChild(path);
+  var dot=document.createElementNS(ns,"circle");dot.setAttribute("class","dot");dot.setAttribute("cx",sx);dot.setAttribute("cy",sy);dot.setAttribute("r",6);lkg.appendChild(dot);
+}
+function paint(){
+  Array.prototype.forEach.call($("seq").querySelectorAll(".api"),function(g){g.classList.toggle("active",g.dataset.op===selected);g.classList.toggle("hot",g.dataset.op===hover&&hover!==selected)});
+  for(var k in cards)cards[k].classList.toggle("active",k===selected);
+  drawLink(hover||selected);
+}
+function bump(e){e.style.zIndex=++z}
+function cardRect(key){var c=cards[key];return {x:pos[key].x,y:pos[key].y,w:c.offsetWidth,h:c.offsetHeight}}
+function select(key,opts){
+  selected=key;hover=null;if(opts&&opts.mi!=null)selMsg[key]=opts.mi;paint();
+  var o=state.order.filter(function(x){return x.key===key})[0];
+  try{history.replaceState(null,"","#"+(o?o.tag.toLowerCase():""))}catch(e){}
+  if(opts&&opts.pan){ensureVisible(cardRect(key));var c=cards[key];c.classList.remove("flash");void c.offsetWidth;c.classList.add("flash");bump(c)}
+}
+function ensureVisible(r){
+  if(!r)return;var vw=vp.clientWidth,vh=vp.clientHeight,s=view.s,m=24;
+  var sx=r.x*s+view.tx,sy=r.y*s+view.ty,sw=r.w*s,sh=r.h*s;
+  if(sx>=m&&sy>=m&&sx+sw<=vw-m&&sy+sh<=vh-m)return;
+  var ntx=view.tx,nty=view.ty;
+  if(sw>vw-2*m||sx<m||sx+sw>vw-m)ntx=(vw-sw)/2-r.x*s;
+  if(sh>vh-2*m||sy<m||sy+sh>vh-m)nty=(vh-sh)/2-r.y*s;
+  if(sh>vh-2*m)nty=m+60-r.y*s;
+  animateTo(ntx,nty,s);
+}
+function animateTo(tx,ty,s,noAnim){if(!noAnim)world.classList.add("anim");view.tx=tx;view.ty=ty;view.s=s;applyView();setTimeout(function(){world.classList.remove("anim");savePos()},noAnim?0:420)}
+function fit(noAnim){
+  if(!state)return;var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  Object.keys(pos).forEach(function(k){var e=el(k);if(!e)return;var p=pos[k];x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+e.offsetWidth);y1=Math.max(y1,p.y+e.offsetHeight)});
+  var vw=vp.clientWidth,vh=vp.clientHeight,s=Math.min(1,Math.max(.15,Math.min((vw-60)/(x1-x0),(vh-130)/(y1-y0))));
+  animateTo((vw-(x1-x0)*s)/2-x0*s,(vh-(y1-y0)*s)/2-y0*s+24,s,noAnim===true);
+}
+
+var drag=null;
+function wireAll(){
+  var svg=$("seq");
+  Array.prototype.forEach.call(svg.querySelectorAll(".api"),function(g){
+    var key=g.dataset.op,mi=+g.dataset.mi;
+    g.addEventListener("click",function(e){e.stopPropagation();select(key,{pan:true,mi:mi})});
+    g.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();select(key,{pan:true,mi:mi})}});
+    g.addEventListener("pointerenter",function(){hover=key;selMsg[key]=mi;paint()});
+    g.addEventListener("pointerleave",function(){hover=null;paint()});
+    g.addEventListener("pointerdown",function(e){e.stopPropagation()});
+    var how=g.dataset.how;if(how){var t=document.createElementNS("http://www.w3.org/2000/svg","title");t.textContent=how==="path"?"Guessed link: matched by method and path":"Guessed link: reply to the call just above";g.appendChild(t)}
+  });
+  state.order.forEach(function(o){
+    var c=cards[o.key],back=c.querySelector(".back");
+    if(back){back.addEventListener("pointerdown",function(e){e.stopPropagation()});
+      back.addEventListener("click",function(e){e.stopPropagation();var mi=selMsg[o.key]!=null?selMsg[o.key]:firstMsgOf(o.key);select(o.key);ensureVisible(arrowRect(mi))})}
+    Array.prototype.forEach.call(c.querySelectorAll("[data-goto]"),function(b){
+      b.addEventListener("pointerdown",function(e){e.stopPropagation()});
+      b.addEventListener("click",function(e){e.stopPropagation();var mi=+b.dataset.goto;select(o.key,{mi:mi});ensureVisible(arrowRect(mi))})});
+    c.addEventListener("pointerenter",function(){if(o.msgs.length){hover=o.key;paint()}});
+    c.addEventListener("pointerleave",function(){hover=null;paint()});
+    c.addEventListener("click",function(){if(selected!==o.key)select(o.key)});
+    Array.prototype.forEach.call(c.querySelectorAll(".copy"),function(btn){
+      btn.addEventListener("pointerdown",function(e){e.stopPropagation()});
+      btn.addEventListener("click",function(e){e.stopPropagation();var t=btn.parentNode.querySelector("pre").textContent;
+        try{navigator.clipboard.writeText(t).then(function(){btn.textContent="Copied"},function(){btn.textContent="Select manually"})}catch(err){btn.textContent="Select manually"}
+        setTimeout(function(){btn.textContent="Copy"},1500)})});
+    wire(o.key,c);
+  });
+  wire("seq",$("p-seq"));
+}
+function wire(id,e){
+  e.addEventListener("pointerdown",function(ev){
+    if(ev.button!==0||ev.target.closest(".api,button,a,.scroll,.copy"))return;
+    ev.stopPropagation();drag={id:id,el:e,sx:ev.clientX,sy:ev.clientY,ox:pos[id].x,oy:pos[id].y,pid:ev.pointerId};
+    e.setPointerCapture(ev.pointerId);bump(e);e.classList.add("dragging")});
+  e.addEventListener("pointermove",function(ev){if(!drag||ev.pointerId!==drag.pid||drag.id!==id)return;
+    pos[id]={x:Math.round(drag.ox+(ev.clientX-drag.sx)/view.s),y:Math.round(drag.oy+(ev.clientY-drag.sy)/view.s)};place(id);drawLink(hover||selected)});
+  function end(ev){if(!drag||ev.pointerId!==drag.pid||drag.id!==id)return;drag.el.classList.remove("dragging");drag=null;savePos()}
+  e.addEventListener("pointerup",end);e.addEventListener("pointercancel",end);
+  e.addEventListener("keydown",function(ev){if(ev.target!==e)return;var st=ev.shiftKey?60:20,d={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[ev.key];
+    if(d){ev.preventDefault();pos[id]={x:pos[id].x+d[0],y:pos[id].y+d[1]};place(id);drawLink(hover||selected);savePos()}});
+}
+
+var pan=null;
+vp.addEventListener("pointerdown",function(e){if(e.button!==0||e.target.closest(".panel"))return;pan={sx:e.clientX,sy:e.clientY,tx:view.tx,ty:view.ty,pid:e.pointerId};vp.setPointerCapture(e.pointerId);vp.classList.add("panning")});
+vp.addEventListener("pointermove",function(e){if(!pan||e.pointerId!==pan.pid)return;view.tx=pan.tx+e.clientX-pan.sx;view.ty=pan.ty+e.clientY-pan.sy;applyView()});
+function endPan(e){if(!pan||e.pointerId!==pan.pid)return;pan=null;vp.classList.remove("panning");savePos()}
+vp.addEventListener("pointerup",endPan);vp.addEventListener("pointercancel",endPan);
+function zoomAt(cx,cy,f){var s=Math.min(1.6,Math.max(.15,view.s*f));f=s/view.s;view.tx=cx-(cx-view.tx)*f;view.ty=cy-(cy-view.ty)*f;view.s=s;applyView();savePos()}
+vp.addEventListener("wheel",function(e){
+  var sc=e.target.closest&&e.target.closest(".scroll");
+  if(!(e.ctrlKey||e.metaKey)&&sc&&sc.scrollHeight>sc.clientHeight+1)return;
+  e.preventDefault();
+  if(e.ctrlKey||e.metaKey)zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*.002));else{view.tx-=e.deltaX;view.ty-=e.deltaY;applyView();savePos()}
+},{passive:false});
+$("zi").addEventListener("click",function(){zoomAt(vp.clientWidth/2,vp.clientHeight/2,1.2)});
+$("zo").addEventListener("click",function(){zoomAt(vp.clientWidth/2,vp.clientHeight/2,1/1.2)});
+$("fit").addEventListener("click",function(){fit()});
+$("reset").addEventListener("click",function(){if(!state)return;for(var k in DEF){pos[k]={x:DEF[k].x,y:DEF[k].y};place(k)}drawLink(hover||selected);fit()});
+window.addEventListener("resize",function(){drawLink(hover||selected)});
+
+/* ================= checks panel ================= */
+function renderChecks(){
+  var is=state.issues,box=$("checks"),btn=$("checksBtn");
+  var groups=[["err","Errors"],["warn","Needs a look"],["guess","Guessed links"],["info","Endpoints not in the diagram"],["info2","Suggestions"]];
+  var nWarn=is.filter(function(i){return i.lvl==="err"||i.lvl==="warn"}).length,nGuess=is.filter(function(i){return i.lvl==="guess"}).length;
+  btn.textContent="Checks"+(nWarn+nGuess?" ("+(nWarn?nWarn+" to look at":"")+(nWarn&&nGuess?", ":"")+(nGuess?nGuess+" guessed":"")+")":" ✓");
+  btn.classList.toggle("warnb",nWarn>0);
+  var h='<h3>Checks <button type="button" id="checksX" aria-label="Close">✕</button></h3>';
+  var linkedN=state.model.ops.filter(function(o){return o.msgs.length}).length;
+  h+='<p class="ok">'+(state.seq.oaiDoc?'Diagram points to <code>'+esc(state.seq.oaiDoc)+'</code>'+(state.specName?', loaded <code>'+esc(state.specName.split(/[?#]/)[0].split("/").pop())+'</code>':'')+'.<br>':'')+state.seq.parts.length+' participants, '+state.model.ops.length+' endpoints, '+linkedN+' linked.</p>';
+  groups.forEach(function(g){var l=is.filter(function(i){return i.lvl===g[0]});if(!l.length)return;h+='<h4>'+g[1]+' ('+l.length+')</h4><ul>'+l.map(function(i){return "<li>"+esc(i.t)+"</li>"}).join("")+'</ul>'});
+  if(!is.filter(function(i){return i.lvl!=="info2"}).length)h+='<p class="ok">Every arrow and endpoint lines up.</p>';
+  box.innerHTML=h;$("checksX").addEventListener("click",function(){box.classList.remove("open")});
+}
+$("checksBtn").addEventListener("click",function(){if(state)$("checks").classList.toggle("open")});
+
+/* ================= loading ================= */
+var ld=$("loader"),taF=$("taFlow"),taS=$("taSpec"),ldmsg=$("ldmsg");
+function openLoader(){var s=null;try{s=JSON.parse(lsGet(STORE_IN)||"null")}catch(e){}
+  if(s&&!taF.value&&!taS.value){taF.value=s.flow||"";taS.value=s.spec||"";$("nFlow").textContent=s.flowName||"";$("nSpec").textContent=s.specName||""}
+  updHint();ldmsg.classList.remove("show");ld.classList.add("open");setTimeout(function(){taF.focus()},30)}
+function closeLoader(){ld.classList.remove("open")}
+function tryBuild(flow,spec,names,silent){
+  try{
+    if(!flow.trim()||!spec.trim())throw new Error("Both a sequence diagram and an API file are needed.");
+    build(flow,spec,names);
+    lsSet(STORE_IN,JSON.stringify({flow:flow,spec:spec,flowName:names&&names.flow||"",specName:names&&names.spec||""}));
+    closeLoader();return true;
+  }catch(e){if(silent)return false;ldmsg.textContent=e.message||String(e);ldmsg.classList.add("show");ld.classList.add("open");console.error(e);return false}
+}
+function readFile(f){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(r.result)};r.onerror=rej;r.readAsText(f)})}
+function isFlow(name,text){return /\.(mmd|mermaid)$/i.test(name)||/^\s*(%%[^\n]*\n\s*)*sequenceDiagram/m.test(text)&&!/^\s*(openapi|swagger)\s*:/m.test(text)}
+function oaiOf(t){var m=String(t).match(/^\s*%%\s*@oai-doc\s+(\S.*)$/m);return m?m[1].trim():null}
+function updHint(){var d=oaiOf(taF.value),el=$("oaiHint");if(d){el.style.display="flex";el.innerHTML="Diagram points to <code>"+esc(d)+"</code>. Pick that file here."}else el.style.display="none"}
+taF.addEventListener("input",updHint);
+$("fFlow").addEventListener("change",function(){var f=this.files[0];if(f)readFile(f).then(function(t){taF.value=t;$("nFlow").textContent="";updHint()})});
+$("fSpec").addEventListener("change",function(){var f=this.files[0];if(f)readFile(f).then(function(t){taS.value=t;$("nSpec").textContent=""})});
+$("ldGo").addEventListener("click",function(){tryBuild(taF.value,taS.value,{flow:$("fFlow").files[0]&&$("fFlow").files[0].name,spec:$("fSpec").files[0]&&$("fSpec").files[0].name})});
+$("ldCancel").addEventListener("click",function(){if(state)closeLoader();else ldmsg.classList.remove("show")});
+$("loadBtn").addEventListener("click",openLoader);
+$("exBtn").addEventListener("click",function(){if(!SAMPLE){ldmsg.textContent="No example is bundled in this copy.";ldmsg.classList.add("show");return}taF.value=SAMPLE.flow;taS.value=SAMPLE.spec;tryBuild(SAMPLE.flow,SAMPLE.spec,{flow:"kx-sign-flow.v2.mmd",spec:"kx-sign-openapi.yaml"})});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"){if(ld.classList.contains("open")&&state)closeLoader();$("checks").classList.remove("open")}});
+// drop anywhere
+var dm=$("dropmask"),dc=0;
+window.addEventListener("dragenter",function(e){if(e.dataTransfer&&Array.prototype.indexOf.call(e.dataTransfer.types,"Files")>=0){dc++;dm.classList.add("on");e.preventDefault()}});
+window.addEventListener("dragleave",function(){dc=Math.max(0,dc-1);if(!dc)dm.classList.remove("on")});
+window.addEventListener("dragover",function(e){e.preventDefault()});
+window.addEventListener("drop",function(e){
+  e.preventDefault();dc=0;dm.classList.remove("on");
+  var fs=Array.prototype.slice.call(e.dataTransfer.files||[]);if(!fs.length)return;
+  Promise.all(fs.map(function(f){return readFile(f).then(function(t){return {name:f.name,text:t}})})).then(function(list){
+    var flow=null,spec=null;list.forEach(function(x){if(isFlow(x.name,x.text))flow=x;else spec=x});
+    var prev=null;try{prev=JSON.parse(lsGet(STORE_IN)||"null")}catch(err){}
+    var F=flow?flow.text:(taF.value||(prev&&prev.flow)||""),S=spec?spec.text:(taS.value||(prev&&prev.spec)||"");
+    taF.value=F;taS.value=S;
+    if(flow&&!spec&&oaiOf(F)&&prev&&prev.specName&&prev.specName.split("/").pop()!==oaiOf(F).split("/").pop()){S="";taS.value=""}
+    if(!S){openLoader();ldmsg.textContent="Now pick the API file"+(oaiOf(F)?" ("+oaiOf(F)+")":"")+".";ldmsg.classList.add("show");return}
+    tryBuild(F,S,{flow:flow?flow.name:"",spec:spec?spec.name:(prev&&prev.specName)||""});
+  });
+});
+
+function start(){
+  var q=new URLSearchParams(location.search);
+  if(q.has("example")&&SAMPLE){taF.value=SAMPLE.flow;taS.value=SAMPLE.spec;tryBuild(SAMPLE.flow,SAMPLE.spec,{});return}
+  if(q.get("flow")){
+    function get(u){return fetch(u).then(function(r){if(!r.ok)throw new Error(u+": HTTP "+r.status);return r.text()})}
+    var specUrl=null;
+    get(q.get("flow")).then(function(ft){
+      var d=oaiOf(ft);specUrl=q.get("spec")||(d?new URL(d,new URL(q.get("flow"),location.href)).href:null);
+      if(!specUrl)throw new Error("no spec= parameter and no %% @oai-doc line in the diagram");
+      return get(specUrl).then(function(st){return [ft,st]})})
+      .then(function(t){taF.value=t[0];taS.value=t[1];tryBuild(t[0],t[1],{flow:q.get("flow"),spec:specUrl})})
+      .catch(function(e){openLoader();ldmsg.textContent="Could not fetch the files from the URL: "+e.message+"\nOpening the file over file:// blocks this; pick the files here instead.";ldmsg.classList.add("show")});
+    return;
+  }
+  var s=null;try{s=JSON.parse(lsGet(STORE_IN)||"null")}catch(e){}
+  if(s&&s.flow&&s.spec&&tryBuild(s.flow,s.spec,{flow:s.flowName,spec:s.specName},true)){taF.value=s.flow;taS.value=s.spec;return}
+  openLoader();
+}
+(document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(start,start);
+})();
+</script>
+</body>
+</html>

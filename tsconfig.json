@@ -36,7 +36,9 @@
       "@excalidraw/utils": ["./packages/utils/src/index.ts"],
       "@excalidraw/utils/*": ["./packages/utils/src/*"],
       "@flowapi/card": ["./packages/flowapi-card/src/index.ts"],
-      "@flowapi/card/*": ["./packages/flowapi-card/src/*"]
+      "@flowapi/card/*": ["./packages/flowapi-card/src/*"],
+      "@flowapi/core": ["./packages/flowapi-core/src/index.ts"],
+      "@flowapi/core/*": ["./packages/flowapi-core/src/*"]
     }
   },
   "include": ["packages", "excalidraw-app"],

@@ -47,6 +47,17 @@ export default defineConfig({
       },
       // flowapi: our own packages
       {
+        find: /^@flowapi\/core$/,
+        replacement: path.resolve(
+          __dirname,
+          "./packages/flowapi-core/src/index.ts",
+        ),
+      },
+      {
+        find: /^@flowapi\/core\/(.*?)/,
+        replacement: path.resolve(__dirname, "./packages/flowapi-core/src/$1"),
+      },
+      {
         find: /^@flowapi\/card$/,
         replacement: path.resolve(
           __dirname,
