@@ -8,17 +8,38 @@ import {
 } from "react";
 
 import { viewportCoordsToSceneCoords } from "@excalidraw/common";
-import { importFiles, planKeys, writeKeys } from "@flowapi/core";
+import { CaptureUpdateAction } from "@excalidraw/excalidraw";
+import { restoreElements } from "@excalidraw/excalidraw/data/restore";
+import {
+  arrowsLinkedTo,
+  importFiles,
+  keyProblem,
+  planKeys,
+  renameKey,
+  writeKeys,
+} from "@flowapi/core";
+import { fileOpen } from "browser-fs-access";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+import type { BinaryFileData } from "@excalidraw/excalidraw/types";
 
 import {
   cardsOnBoard as getCardsOnBoard,
   flowsOnBoard as getFlowsOnBoard,
   placeFlow,
   placeOperation,
+  rekeyCard,
   syncBoard,
 } from "./board";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { saveTextFile, savesAsDownload } from "./files";
+import {
+  FLOWAPI_EXTENSION,
+  parseProjectFile,
+  projectFromFile,
+  serializeProject,
+} from "./projectFile";
 import { ChecksPanel } from "./ChecksPanel";
 import { KeyPatternDialog } from "./KeyPatternDialog";
 import { FLOWAPI_DRAG_MIME, ProjectPanel } from "./ProjectPanel";
@@ -27,12 +48,17 @@ import { S } from "./strings";
 
 import "./flowapi.scss";
 
-import type { KeyPattern } from "@flowapi/core";
+import type { KeyPattern, Operation } from "@flowapi/core";
+
+import type { ProjectFile } from "./projectFile";
 
 import type { DragPayload } from "./ProjectPanel";
 
 /** files the project takes; anything else dropped goes to Excalidraw */
-const IMPORT_RE = /\.(mmd|mermaid|ya?ml|json)$/i;
+const IMPORT_RE = /\.(mmd|mermaid|ya?ml|json|flowapi)$/i;
+const PROJECT_RE = /\.flowapi$/i;
+
+const isAbort = (e: unknown) => (e as Error)?.name === "AbortError";
 
 const hasOurMime = (e: React.DragEvent) =>
   Array.from(e.dataTransfer.types || []).includes(FLOWAPI_DRAG_MIME);
@@ -47,12 +73,13 @@ export const FlowApiShell = ({
   children: React.ReactNode;
 }) => {
   const store = useMemo(() => new ProjectStore(), []);
-  const { project, model } = useSyncExternalStore(
+  const { project, model, name } = useSyncExternalStore(
     store.subscribe,
     store.getState,
   );
   const [checksOpen, setChecksOpen] = useState(false);
   const [keySpecId, setKeySpecId] = useState<string | null>(null);
+  const [pendingOpen, setPendingOpen] = useState<ProjectFile | null>(null);
   const [board, setBoard] = useState({
     cards: new Set<string>(),
     flows: new Set<string>(),
@@ -97,8 +124,138 @@ export const FlowApiShell = ({
     }
   }, [excalidrawAPI, model]);
 
+  const applyProjectFile = useCallback(
+    (file: ProjectFile) => {
+      store.fileHandle = null;
+      store.setProject(projectFromFile(file), file.meta.name);
+      if (excalidrawAPI) {
+        const { zoom, scrollX, scrollY, viewBackgroundColor } =
+          file.canvas.appState;
+        excalidrawAPI.addFiles(
+          Object.values(file.canvas.files) as BinaryFileData[],
+        );
+        excalidrawAPI.updateScene({
+          elements: restoreElements(file.canvas.elements, null, {
+            repairBindings: true,
+          }),
+          appState: {
+            zoom: { value: zoom as any },
+            scrollX,
+            scrollY,
+            viewBackgroundColor:
+              viewBackgroundColor ||
+              excalidrawAPI.getAppState().viewBackgroundColor,
+            selectedElementIds: {},
+          },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+        excalidrawAPI.history.clear();
+      }
+      toast(S.projectOpened(file.meta.name));
+    },
+    [excalidrawAPI, store, toast],
+  );
+
+  const openProjectFile = useCallback(
+    async (file: File) => {
+      let parsed: ProjectFile;
+      try {
+        parsed = parseProjectFile(await file.text());
+      } catch (e) {
+        toast(S.projectBadFile(file.name, (e as Error).message));
+        return;
+      }
+      if (!parsed.meta.name || parsed.meta.name === "project") {
+        parsed.meta.name = file.name.replace(PROJECT_RE, "");
+      }
+      const { project: cur } = store.getState();
+      const boardEmpty = !excalidrawAPI?.getSceneElements().length;
+      if (!cur.flows.length && !cur.specs.length && boardEmpty) {
+        applyProjectFile(parsed);
+      } else {
+        setPendingOpen(parsed);
+      }
+    },
+    [applyProjectFile, excalidrawAPI, store, toast],
+  );
+
+  const saveProject = useCallback(async () => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const base = store.fileBaseName();
+    const text = serializeProject(
+      base,
+      store.getState().project,
+      excalidrawAPI.getSceneElementsIncludingDeleted(),
+      excalidrawAPI.getAppState(),
+      excalidrawAPI.getFiles(),
+    );
+    const download = savesAsDownload();
+    try {
+      const handle = await saveTextFile(
+        text,
+        `${base}.${FLOWAPI_EXTENSION}`,
+        "application/json",
+        "FlowAPI project",
+        store.fileHandle,
+      );
+      store.fileHandle = handle || null;
+      const savedName = handle?.name?.replace(PROJECT_RE, "") || base;
+      if (savedName !== store.getState().name) {
+        store.setName(savedName);
+      }
+      toast(
+        `${S.projectSaved(`${savedName}.${FLOWAPI_EXTENSION}`)}${
+          download ? `\n${S.downloadNote}` : ""
+        }`,
+      );
+    } catch (e) {
+      if (!isAbort(e)) {
+        toast((e as Error).message);
+      }
+    }
+  }, [excalidrawAPI, store, toast]);
+
+  const openProject = useCallback(async () => {
+    try {
+      const file = await fileOpen({
+        extensions: [`.${FLOWAPI_EXTENSION}`],
+        description: "FlowAPI project",
+      });
+      await openProjectFile(file);
+    } catch (e) {
+      if (!isAbort(e)) {
+        toast((e as Error).message);
+      }
+    }
+  }, [openProjectFile, toast]);
+
+  const onRenameKey = (op: Operation, newKey: string): string | null => {
+    const m = store.getState().model;
+    const problem = keyProblem(m, op.specId, newKey, op);
+    if (problem) {
+      return problem;
+    }
+    const arrows = arrowsLinkedTo(m, op.specId, op.key).length;
+    if (excalidrawAPI) {
+      rekeyCard(excalidrawAPI, op.specId, op.key, newKey);
+    }
+    store.setProject(renameKey(m, op.specId, op, newKey));
+    toast(S.keyRenamed(op.key, newKey, arrows));
+    return null;
+  };
+
   const addFiles = useCallback(
-    async (files: File[]) => {
+    async (all: File[]) => {
+      const projectFiles = all.filter((f) => PROJECT_RE.test(f.name));
+      if (projectFiles.length) {
+        await openProjectFile(projectFiles[0]);
+      }
+      const files = all.filter((f) => !PROJECT_RE.test(f.name));
+      if (!files.length) {
+        return;
+      }
       const read = await Promise.all(
         files.map(async (f) => ({ name: f.name, text: await f.text() })),
       );
@@ -136,7 +293,7 @@ export const FlowApiShell = ({
         setKeySpecId(keyless.id);
       }
     },
-    [store, toast],
+    [openProjectFile, store, toast],
   );
 
   const onWriteKeys = (specId: string, pattern: KeyPattern) => {
@@ -217,19 +374,25 @@ export const FlowApiShell = ({
       >
         <ProjectPanel
           model={model}
+          name={name}
           cardsOnBoard={board.cards}
           flowsOnBoard={board.flows}
-          onAddFiles={() => fileInput.current?.click()}
-          onRemove={(id) => store.removeFile(id)}
-          onOpenChecks={() => setChecksOpen((o) => !o)}
-          onNameKeys={(id) => setKeySpecId(id)}
           checksOpen={checksOpen}
+          actions={{
+            addFiles: () => fileInput.current?.click(),
+            removeFile: (id) => store.removeFile(id),
+            toggleChecks: () => setChecksOpen((o) => !o),
+            nameKeys: (id) => setKeySpecId(id),
+            openProject,
+            saveProject,
+            renameKey: onRenameKey,
+          }}
         />
         <input
           ref={fileInput}
           type="file"
           multiple
-          accept=".mmd,.mermaid,.yaml,.yml,.json"
+          accept=".mmd,.mermaid,.yaml,.yml,.json,.flowapi"
           style={{ display: "none" }}
           data-testid="flowapi-file-input"
           onChange={(e) => {
@@ -251,6 +414,21 @@ export const FlowApiShell = ({
           <ChecksPanel model={model} onClose={() => setChecksOpen(false)} />
         )}
       </div>
+      {pendingOpen && (
+        <ConfirmDialog
+          title={S.replaceTitle}
+          confirmLabel={S.replaceConfirm}
+          onConfirm={() => {
+            const file = pendingOpen;
+            setPendingOpen(null);
+            applyProjectFile(file);
+          }}
+          onCancel={() => setPendingOpen(null)}
+          testId="flowapi-replace-dialog"
+        >
+          <p>{S.replaceBody}</p>
+        </ConfirmDialog>
+      )}
       {keySpec && (
         <KeyPatternDialog
           spec={keySpec}

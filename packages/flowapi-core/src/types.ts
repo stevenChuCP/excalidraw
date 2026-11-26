@@ -10,6 +10,8 @@ export type SourceFile = {
 export type Project = {
   flows: SourceFile[];
   specs: SourceFile[];
+  /** keys of deleted operations, per spec id; never handed out again */
+  retiredKeys?: Record<string, string[]>;
 };
 
 export type IssueLevel =

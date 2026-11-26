@@ -405,3 +405,86 @@
   color: #e03131;
   font-size: 12px;
 }
+
+.flowapi-panel__tools {
+  display: inline-flex;
+  gap: 4px;
+}
+.flowapi-panel__head .flowapi-panel__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowapi-btn--small {
+  padding: 3px 7px;
+  font-size: 12px;
+}
+
+.flowapi-btn--danger {
+  background: #e03131;
+  border-color: #e03131;
+  color: #fff !important;
+  &:hover {
+    background: #c92a2a;
+  }
+}
+
+.flowapi-row--active {
+  background: var(--fa-hover);
+  box-shadow: inset 3px 0 0 var(--fa-accent);
+}
+
+.flowapi-x--on {
+  visibility: visible;
+}
+
+.flowapi-menu {
+  position: relative;
+  display: inline-flex;
+  &__list {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    min-width: 180px;
+    padding: 4px;
+    border: 1px solid var(--fa-border);
+    border-radius: 8px;
+    background: var(--fa-bg);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+    button {
+      border: 0;
+      background: none;
+      text-align: left;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 400;
+      white-space: nowrap;
+      &:hover {
+        background: var(--fa-hover);
+      }
+    }
+  }
+}
+
+.flowapi-key-input {
+  width: 64px;
+  padding: 1px 4px;
+  border: 1px solid var(--fa-accent);
+  border-radius: 4px;
+  background: var(--fa-bg);
+  color: var(--fa-text);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.flowapi-row-error {
+  margin: 0 12px 4px 38px;
+  color: #e03131;
+  font-size: 12px;
+}

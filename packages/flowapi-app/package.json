@@ -5,5 +5,8 @@
   "description": "FlowAPI app layer: project sidebar, Checks panel, flow layout on the canvas",
   "type": "module",
   "main": "./src/index.ts",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "browser-fs-access": "0.38.0"
+  }
 }

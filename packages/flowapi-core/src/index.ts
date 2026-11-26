@@ -16,3 +16,19 @@ export {
 } from "./keys";
 export type { KeyPattern } from "./keys";
 export type { FileKind, ImportResult } from "./files";
+export {
+  KEY_RE,
+  keyProblem,
+  nextKey,
+  setOperationKey,
+  renameKey,
+  linkArrow,
+  unlinkArrow,
+  stubFromLabel,
+  addOperation,
+  deleteOperation,
+  deleteOperationFromProject,
+  arrowsLinkedTo,
+  fixDuplicateKey,
+} from "./edit";
+export type { OperationStub } from "./edit";
