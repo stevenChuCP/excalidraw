@@ -29,3 +29,9 @@ Rules:
 - **What went:** the Share button and Live collaboration entries (top right, menu, welcome screen, command palette), the share dialog and its QR code, `#room=` links, the room socket (`socket.io-client`), Firestore scene sync, the collaborator username store, following another user, the offline warning, and the `?collaborators=N` debug helper.
 - **Files:** `excalidraw-app/collab/`, `excalidraw-app/share/`, `debugCollaborators.ts`, `tests/collab.test.tsx` deleted; `App.tsx`, `AppMainMenu.tsx`, `AppWelcomeScreen.tsx`, `data/index.ts`, `data/firebase.ts`, `data/localStorage.ts`, `app_constants.ts`, `vite-env.d.ts`, `index.scss`, `.env.*`, `package.json`, `yarn.lock` edited.
 - **Note:** the library still has its collaboration props (`isCollaborating`, `onPointerUpdate`, ...). The app just no longer passes them.
+
+## Share links
+
+- **Why:** share links upload the scene and its images to the upstream backend and Firebase storage. FlowAPI keeps work in the `.flowapi` file.
+- **What went:** "Shareable link" in the export dialog and its link dialog, opening `#json=`, `?id=` and `#url=` links (the app now always loads the scene from browser storage), reloading the scene on hash change, the "end-to-end encrypted" footer badge, and the `VITE_APP_BACKEND_V2_*` settings.
+- **Files:** `excalidraw-app/data/index.ts`, `components/EncryptedIcon.tsx` deleted; `App.tsx`, `AppFooter.tsx`, `data/FileManager.ts`, `app_constants.ts`, `vite-env.d.ts`, `index.scss`, `.env.*` edited.

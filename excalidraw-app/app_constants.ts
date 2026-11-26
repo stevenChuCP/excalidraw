@@ -2,8 +2,6 @@
 export const SAVE_TO_LOCAL_STORAGE_TIMEOUT = 300;
 export const SYNC_BROWSER_TABS_TIMEOUT = 50;
 
-// should be aligned with MAX_ALLOWED_FILE_BYTES
-export const FILE_UPLOAD_MAX_BYTES = 4 * 1024 * 1024; // 4 MiB
 // 1 year (https://stackoverflow.com/a/25201898/927631)
 export const FILE_CACHE_MAX_AGE_SEC = 31536000;
 
