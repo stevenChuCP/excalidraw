@@ -1,0 +1,15 @@
+%% @oai-doc kx-sign-openapi.yaml
+%% Test fixture for FlowAPI acceptance checks (written by Claude).
+%% Shares A5 and A6 with the QR signing flow. Line with A9 is a deliberate bad key.
+sequenceDiagram
+    participant S as SaaS
+    participant Q as Queue
+    participant TB as 第三方後端
+    %% @api A5
+    S->>Q: enqueue result after POST …/signatures
+    %% @api A6
+    Q->>TB: Webhook delivery attempt 1
+    TB-->>Q: 5XX or timeout
+    %% @api A9
+    Q->>TB: Webhook retry with backoff
+    TB-->>Q: 2XX acknowledged

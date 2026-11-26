@@ -1,0 +1,12 @@
+{
+  "name": "@flowapi/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "FlowAPI project model: parse Mermaid flows and OpenAPI specs, link them, and check them",
+  "type": "module",
+  "main": "./src/index.ts",
+  "license": "MIT",
+  "dependencies": {
+    "yaml": "2.6.1"
+  }
+}

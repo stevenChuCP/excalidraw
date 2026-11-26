@@ -1,0 +1,67 @@
+%% @oai-doc kx-sign-openapi.yaml
+%% QR signing flow (KX Sign) - sequence diagram source
+%% Arrows are linked to operations with '%% @api <x-diagram-tag>' on the line above.
+%%   A1 createSignRequest   A2 createMobileSession   A3 getMobileSignRequest
+%%   A4 rejectSignRequest   A5 submitSignature       A6 webhook signResultNotification
+%%   A7 getSignRequest
+sequenceDiagram
+    participant TB as 第三方後端<br/>Bank / PDF Sign / CA
+    participant TW as 第三方網頁<br/>Browser
+    participant S as SaaS<br/>API + DB + Queue
+    participant M as Mobile<br/>App
+    participant K as KX701<br/>私鑰 + PIN
+
+    rect rgb(238, 240, 243)
+    Note over TB,K: 建立請求
+    %% @api A1
+    TB->>S: ① POST /v1/sign-requests<br/>(Idempotency-Key、OAuth2 + mTLS)
+    Note over S: 驗證租戶，建立 request_id、secret、nonce<br/>只存 secret 雜湊與失效時間
+    %% @api A1
+    S-->>TB: ② 201 request_id、launch_url
+    end
+
+    rect rgb(238, 240, 243)
+    Note over TB,K: QR 掃描與 Mobile session
+    TB->>TW: ③ 傳 launch_url<br/>網頁顯示 QR
+    TW-->>M: 使用者以 Mobile 掃描 QR
+    %% @api A2
+    M->>S: POST /v1/mobile/request-sessions<br/>(request_id + access_secret)
+    %% @api A2
+    S-->>M: 短效 Mobile session
+    end
+
+    rect rgb(238, 240, 243)
+    Note over TB,K: 取得待簽資料與簽章
+    %% @api A3
+    M->>S: ④ GET /v1/mobile/sign-requests/{id}
+    %% @api A3
+    S-->>M: 來源、待簽文字、憑證條件、DTBS
+    Note over M: ⑤ 分開顯示來源與第三方內容<br/>使用者確認
+    M->>K: 讀憑證、PIN、簽章<br/>(USB / NFC / SDK)
+    K-->>M: 憑證 + 簽章值
+    opt (選用) 拒簽
+        %% @api A4
+        M-->>S: POST …/sign-requests/{id}/reject
+    end
+    end
+
+    rect rgb(238, 240, 243)
+    Note over TB,K: 驗章與通知
+    %% @api A5
+    M->>S: ⑥ POST /v1/mobile/sign-requests/{id}/signatures<br/>(憑證鏈、簽章值、演算法識別)
+    Note over S: ⑦ 重建 DTBS，驗憑證鏈、撤銷、限制、簽章<br/>pending → signed
+    %% @api A6
+    S->>TB: ⑧ Webhook<br/>(HMAC、timestamp、delivery id)
+    Note over TB: 驗 HMAC，核對 request_id
+    %% @api A7
+    TB->>S: GET /v1/sign-requests/{id}
+    %% @api A7
+    S-->>TB: 狀態 + 簽章結果
+    Note over TB: 自行驗章，確認此憑證<br/>對應該筆交易的核准人
+    TB->>TW: ⑨ 更新網頁狀態<br/>(輪詢 / 即時通道)
+    end
+
+    rect rgb(253, 232, 230)
+    Note over TB,K: 例外處理 (文件 3.2)
+    Note over TB,K: QR 過期、secret 不符：拒絕交換 session<br/>憑證不符、撤銷、簽章錯誤：拒收，不轉 signed<br/>重複或併發提交：僅一筆成功<br/>Webhook 失敗：retry + backoff，第三方可用 GET 補查
+    end

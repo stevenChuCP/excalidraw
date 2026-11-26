@@ -1,0 +1,402 @@
+openapi: 3.1.0
+info:
+  title: KX Sign SaaS API
+  version: 0.1.0-draft
+  summary: QR 簽章流程 API 規格 (KX701 signing SaaS)
+  description: |
+    Extracted from the QR signing canvas (SaaS Technical Design v0.1).
+    Only what the design document already states is defined here. Where v0.1
+    leaves request/response fields open, the schema is a loose placeholder and
+    carries `x-undefined: true`.
+
+    Flow tags (A1-A7) refer to the sequence diagram in `kx-sign-flow.mmd`.
+    `x-doc-sections` lists the related sections in the design document.
+servers:
+  - url: https://api.example.com
+    description: Placeholder. Replace with the real SaaS base URL.
+tags:
+  - name: Tenant API
+    description: 第三方後端（租戶）呼叫
+  - name: Mobile API
+    description: Mobile App 以短效 session 呼叫
+  - name: Webhook
+    description: SaaS 呼叫第三方
+
+security:
+  - tenantOAuth2: []
+
+paths:
+  /v1/sign-requests:
+    post:
+      operationId: createSignRequest
+      tags: [Tenant API]
+      summary: A1 建立簽章請求及 QR 入口
+      description: |
+        提交交易摘要、交易資料 digest、憑證限制與到期時間。SaaS 建立 request 並回傳 launch_url。流程步驟 ① ②。
+
+        - SaaS 建立 request_id、access_secret（至少 128-bit 隨機）、nonce，只儲存 access_secret 的雜湊與失效時間。
+        - launch_url 把 secret 放在 URL fragment 以減少 HTTP 傳輸洩漏。URL 仍屬敏感資訊，需設定 Referrer-Policy 與 log redaction，Mobile 兌換 session 後不再重用 secret。
+        - 入口 token 必須可撤銷、不可猜測。
+        - payload_hash 由銀行依雙方約定規則計算，不是 SaaS 產生（待決議 D04）。
+        - QR secret TTL 暫定 5 分鐘。
+        - tenant_id 由經驗證的 client identity 決定，不能只依靠 Request Body；查詢與結果均以 tenant scope 限制。
+      x-diagram-tag: A1
+      x-doc-sections: ["§6 API Contract", "§6.1 Create Sign Request", "§3 Signing Flow", "§8 Security"]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+          example: 7c0c4f5a-...
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSignRequest" }
+            example:
+              type: bank_approval
+              display_text: "核准轉帳：收款末五碼 12345，金額 TWD 10,000"
+              payload_hash_alg: SHA-256
+              payload_hash: "<base64url-of-32-bytes>"
+              cert_constraint:
+                type: fingerprint_sha256
+                values: ["<hex-of-cert-sha256>"]
+              signing_profile: RAW_V1_RSA_SHA256
+              expires_in_seconds: 300
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateSignRequestResponse" }
+              example:
+                request_id: "<uuid>"
+                status: pending
+                expires_at: "<RFC3339>"
+                launch_url: "https://sign.example.com/r/<request-id>#t=<one-time-access-secret>"
+        "4XX": { $ref: "#/components/responses/Error" }
+
+  /v1/sign-requests/{id}:
+    get:
+      operationId: getSignRequest
+      tags: [Tenant API]
+      summary: A7 查詢狀態及結果
+      description: |
+        第三方收到 webhook 後用它取回結果，webhook 失敗時也靠它補查。
+
+        - 主狀態：pending → signed / rejected / expired / cancelled。
+        - 租戶 B 不能查詢或操作租戶 A 的任何 request。
+        - 不提供憑證存在性查詢，錯誤回傳不暴露其他租戶或簽章者資訊。
+        - 第三方取回後須自行驗章：以 DTBS 與憑證獨立驗證，並確認該憑證對應此筆交易的核准人。
+        - SaaS 驗章不等於替第三方認定業務授權。
+      x-diagram-tag: A7
+      x-doc-sections: ["§6 API Contract", "§3.1 Request States", "§8 Security"]
+      parameters:
+        - { $ref: "#/components/parameters/RequestId" }
+      responses:
+        "200":
+          description: 狀態 + 簽章結果
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SignRequestResult" }
+        "4XX": { $ref: "#/components/responses/Error" }
+
+  /v1/mobile/request-sessions:
+    post:
+      operationId: createMobileSession
+      tags: [Mobile API]
+      summary: A2 以 QR secret 交換短效 session
+      description: |
+        用 request_id 與 access_secret 換取只對應這一筆請求的短效 session。Mobile 掃描 QR 之後呼叫。
+
+        - Mobile 端不持有租戶 API Key；憑據是 QR / Link 內受限、短效的 request access 憑據（request_id + access_secret）。
+        - QR 憑據只用於取得本筆請求，不能用於查詢其他請求。
+        - access_secret 使用 CSPRNG，至少 128-bit，TTL 暫定 5 分鐘，需限流與 secret redaction。
+        - SaaS 只存 secret 雜湊（mobile_request_sessions 設 TTL 並限次）。
+        - 兌換 session 後不再重用 secret。
+        - QR 過期 / secret 不符：拒絕交換 Mobile session，不洩漏請求細節。
+      x-diagram-tag: A2
+      x-doc-sections: ["§6 API Contract", "§3 Signing Flow", "§3.2 Failure Handling", "§8 Security", "§7 Database"]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              x-undefined: true
+              description: v0.1 尚未定義欄位。文件只寫明憑據為 request_id + access_secret。
+              properties:
+                request_id: { type: string }
+                access_secret: { type: string }
+      responses:
+        "200":
+          description: 短效 Mobile session。v0.1 尚未定義 Response 欄位。
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true, x-undefined: true }
+        "4XX": { $ref: "#/components/responses/Error" }
+
+  /v1/mobile/sign-requests/{id}:
+    get:
+      operationId: getMobileSignRequest
+      tags: [Mobile API]
+      summary: A3 取得來源、DTBS、待簽資訊
+      description: |
+        取得要顯示給使用者的內容，以及要送進 KX701 簽的資料。流程步驟 ④。session 必須對應同一個 request。
+
+        - 回傳已審核的 tenant.display_name / 圖示、待簽文字、必要的憑證條件、signing_profile 與可驗證的待簽資料（DTBS）。
+        - SaaS 生成、儲存並可回傳確切 DTBS bytes，確保跨平台完全一致。
+        - Mobile 將平台已驗證來源與「第三方提供的待簽內容」分開顯示。
+        - 簽章前 App 應顯示與 DTBS 綁定的文字，不能用另一份未受保護的文字替代。
+
+        DTBS 格式（§4 Raw v1 提案）：
+
+        ```
+        DTBSv1 = UTF8("KX-SIGN-RAW-V1\n") || UTF8(JCS(SigningPayload))
+        ```
+
+        SigningPayload 見 components/schemas/SigningPayload。
+      x-diagram-tag: A3
+      x-doc-sections: ["§6 API Contract", "§3 Signing Flow", "§4 Signing Profile"]
+      security:
+        - mobileSession: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestId" }
+      responses:
+        "200":
+          description: 來源、待簽文字、憑證條件、DTBS。v0.1 尚未定義 Response 欄位名稱。
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true, x-undefined: true }
+        "4XX": { $ref: "#/components/responses/Error" }
+
+  /v1/mobile/sign-requests/{id}/reject:
+    post:
+      operationId: rejectSignRequest
+      tags: [Mobile API]
+      summary: A4 主動拒簽（選用）
+      description: |
+        使用者在 Mobile 上拒絕簽署。文件把它列為 optional，對應主狀態 rejected。MVP 是否實作待確認。
+      x-diagram-tag: A4
+      x-doc-sections: ["§6 API Contract", "§3.1 Request States"]
+      security:
+        - mobileSession: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestId" }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true, x-undefined: true }
+      responses:
+        "200":
+          description: v0.1 尚未定義 Response 欄位。
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true, x-undefined: true }
+        "4XX": { $ref: "#/components/responses/Error" }
+
+  /v1/mobile/sign-requests/{id}/signatures:
+    post:
+      operationId: submitSignature
+      tags: [Mobile API]
+      summary: A5 提交憑證及簽章
+      description: |
+        把 KX701 產生的簽章與憑證交給 SaaS。SaaS 重建 DTBS、驗章，通過才標為 signed。流程步驟 ⑥ ⑦。
+
+        Server 最少驗證：
+        - 請求仍有效（未過期）
+        - Mobile session 對應同一 request
+        - tenant issuer policy
+        - 憑證鏈、憑證用途與狀態（含 OCSP/CRL）
+        - 憑證 fingerprint 限制
+        - 對伺服器重建 DTBS 的簽章
+        - 唯一狀態更新（pending → signed）
+
+        行為：
+        - SaaS 不接收 PIN，PIN 只在 Mobile 與 KX701 之間。
+        - 不得直接採信 Mobile 自稱的使用者身分。
+        - 同一 request_id 僅允許一筆成功簽章，以 conditional update / unique constraint 防止併發雙重完成。
+        - OCSP/CRL 無法取得時採 fail-closed。
+        - 驗證失敗不會使請求成為 signed。
+      x-diagram-tag: A5
+      x-doc-sections: ["§6 API Contract", "§6.2 Submit Signature", "§3 Signing Flow", "§3.2 Failure Handling", "§8 Security"]
+      security:
+        - mobileSession: []
+      parameters:
+        - { $ref: "#/components/parameters/RequestId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitSignatureRequest" }
+            example:
+              signing_profile: RAW_V1_RSA_SHA256
+              cert_der_base64: "<base64-DER>"
+              signature_base64: "<base64-signature>"
+      responses:
+        "200":
+          description: 驗證通過，狀態轉為 signed。v0.1 尚未定義 Response 欄位。
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true, x-undefined: true }
+        "4XX":
+          $ref: "#/components/responses/Error"
+
+webhooks:
+  signResultNotification:
+    post:
+      operationId: signResultNotification
+      tags: [Webhook]
+      summary: A6 簽章結果通知（SaaS 呼叫第三方）
+      description: |
+        簽章完成後 SaaS（WebhookModule）排入 webhook 任務通知第三方，目標為 tenants.webhook_url。流程步驟 ⑧。
+
+        - 租戶專屬 HMAC 簽署，附 timestamp 與 delivery id；Webhook 密鑰需可輪替，存放於 Secret Manager。
+        - 第三方收到後先驗 HMAC、確認 request_id 歸屬，再透過 A7 取回並驗證結果。
+        - delivery ID、timestamp、HMAC 用來防止重播。
+        - Webhook 投遞狀態與簽章狀態分開保存，webhook 失敗不可回滾已驗證簽章。
+        - 失敗時 Retry + backoff，第三方也能用 A7 查詢恢復結果（§3.2）。
+        - v0.1 尚未定義 header 名稱與 payload 欄位。
+      x-diagram-tag: A6
+      x-doc-sections: ["§5 Backend Modules", "§3 Signing Flow", "§3.2 Failure Handling", "§8 Security"]
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true, x-undefined: true }
+      responses:
+        "2XX":
+          description: 第三方確認收到
+
+components:
+  securitySchemes:
+    tenantOAuth2:
+      type: oauth2
+      description: OAuth2 client credentials + mTLS（具體 Profile 待擇定）。
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.example.com/oauth2/token
+          scopes: {}
+    mobileSession:
+      type: http
+      scheme: bearer
+      description: 由 A2 取得的短效 Mobile session，且必須對應同一個 request。
+
+  parameters:
+    RequestId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Error:
+      description: |
+        錯誤回應。body 結構為暫定，v0.1 只定義下列 code。
+        HTTP 狀態碼尚未定案。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    CreateSignRequest:
+      type: object
+      required: [type, display_text, payload_hash_alg, payload_hash, signing_profile, expires_in_seconds]
+      properties:
+        type:
+          type: string
+          example: bank_approval
+        display_text:
+          type: string
+          description: 顯示給使用者的待簽文字（綁定於 DTBS）。
+        payload_hash_alg:
+          type: string
+          example: SHA-256
+        payload_hash:
+          type: string
+          description: 由銀行依雙方約定規則計算（base64url），不是 SaaS 產生（待決議 D04）。
+        cert_constraint:
+          type: object
+          properties:
+            type:
+              type: string
+              example: fingerprint_sha256
+            values:
+              type: array
+              items: { type: string, description: hex of cert SHA-256 }
+        signing_profile:
+          type: string
+          example: RAW_V1_RSA_SHA256
+        expires_in_seconds:
+          type: integer
+          example: 300
+
+    CreateSignRequestResponse:
+      type: object
+      required: [request_id, status, expires_at, launch_url]
+      properties:
+        request_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/RequestStatus" }
+        expires_at: { type: string, format: date-time }
+        launch_url:
+          type: string
+          format: uri
+          description: secret 放在 URL fragment（#t=...）。屬敏感資訊，需 Referrer-Policy 與 log redaction。
+
+    RequestStatus:
+      type: string
+      enum: [pending, signed, rejected, expired, cancelled]
+
+    SignRequestResult:
+      type: object
+      x-undefined: true
+      description: 狀態 + 簽章結果。v0.1 只定義 status，其餘欄位待補。
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/RequestStatus" }
+      additionalProperties: true
+
+    SubmitSignatureRequest:
+      type: object
+      required: [signing_profile, cert_der_base64, signature_base64]
+      properties:
+        signing_profile: { type: string, example: RAW_V1_RSA_SHA256 }
+        cert_der_base64: { type: string, description: base64 of the DER certificate }
+        signature_base64: { type: string }
+
+    SigningPayload:
+      type: object
+      description: DTBS 內的 SigningPayload（§4 Raw v1 提案），經 JCS 正規化後與前綴串接。
+      required: [version, tenant_id, request_id, nonce, display_text, payload_hash_alg, payload_hash, expires_at]
+      properties:
+        version: { type: integer, const: 1 }
+        tenant_id: { type: string }
+        request_id: { type: string }
+        nonce: { type: string, description: server-generated nonce }
+        display_text: { type: string, description: exact text shown to user }
+        payload_hash_alg: { type: string, example: SHA-256 }
+        payload_hash: { type: string, description: base64url digest }
+        expires_at: { type: string, format: date-time, description: RFC3339 UTC timestamp }
+
+    Error:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: |
+            REQUEST_EXPIRED 請求已過期
+            REQUEST_ALREADY_COMPLETED 同一 request 已有成功簽章
+            CERT_NOT_ALLOWED 憑證不符合請求限制
+            CERT_REVOKED 憑證已撤銷
+            SIGNATURE_INVALID 簽章驗證失敗
+            SIGNING_PROFILE_UNSUPPORTED 不支援的 signing_profile
+          enum:
+            - REQUEST_EXPIRED
+            - REQUEST_ALREADY_COMPLETED
+            - CERT_NOT_ALLOWED
+            - CERT_REVOKED
+            - SIGNATURE_INVALID
+            - SIGNING_PROFILE_UNSUPPORTED
+        message: { type: string }

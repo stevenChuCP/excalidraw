@@ -37,6 +37,7 @@ import { newElementWith } from "@excalidraw/element";
 import { isInitializedImageElement } from "@excalidraw/element";
 import { useHandleLibrary } from "@excalidraw/excalidraw/data/library";
 import { createApiCardElement } from "@flowapi/card/create";
+import { FlowApiShell } from "@flowapi/app";
 
 import type { RestoredDataState } from "@excalidraw/excalidraw/data/restore";
 import type {
@@ -510,196 +511,205 @@ const ExcalidrawWrapper = () => {
 
   return (
     <div style={{ height: "100%" }} className="excalidraw-app">
-      <Excalidraw
-        onChange={onChange}
-        onExport={onExport}
-        initialData={initialStatePromiseRef.current.promise}
-        UIOptions={{
-          canvasActions: {
-            toggleTheme: true,
-            // flowapi: no "Shareable link" export (see REMOVED.md)
-            export: {},
-          },
-        }}
-        langCode={langCode}
-        renderCustomStats={renderCustomStats}
-        detectScroll={false}
-        // flowapi: AI features are removed (see REMOVED.md)
-        aiEnabled={false}
-        handleKeyboardGlobally={true}
-        autoFocus={true}
-        theme={editorTheme}
-        onThemeChange={setAppTheme}
-        onLinkOpen={(element, event) => {
-          if (element.link && isElementLink(element.link)) {
-            event.preventDefault();
-            excalidrawAPI?.setViewport({
-              target: element.link,
-              fit: "scale-down",
-              animation: true,
-            });
-          }
-        }}
-      >
-        <AppMainMenu
-          theme={appTheme}
-          refresh={() => forceRefresh((prev) => !prev)}
-        />
-        <AppWelcomeScreen />
-        <OverwriteConfirmDialog>
-          <OverwriteConfirmDialog.Actions.ExportToImage />
-          <OverwriteConfirmDialog.Actions.SaveToDisk />
-        </OverwriteConfirmDialog>
-        <AppFooter onChange={() => excalidrawAPI?.refresh()} />
-        {localStorageQuotaExceeded && (
-          <div className="alert alert--danger">
-            {t("alerts.localStorageQuotaExceeded")}
-          </div>
-        )}
-        {errorMessage && (
-          <ErrorDialog onClose={() => setErrorMessage("")}>
-            {errorMessage}
-          </ErrorDialog>
-        )}
-
-        <CommandPalette
-          customCommandPaletteItems={[
-            {
-              label: "GitHub",
-              icon: GithubIcon,
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              keywords: [
-                "issues",
-                "bugs",
-                "requests",
-                "report",
-                "features",
-                "social",
-                "community",
-              ],
-              perform: () => {
-                window.open(
-                  "https://github.com/excalidraw/excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
+      {/* flowapi: project sidebar beside the editor */}
+      <FlowApiShell excalidrawAPI={excalidrawAPI} theme={editorTheme}>
+        <Excalidraw
+          onChange={onChange}
+          onExport={onExport}
+          initialData={initialStatePromiseRef.current.promise}
+          UIOptions={{
+            canvasActions: {
+              toggleTheme: true,
+              // flowapi: no "Shareable link" export (see REMOVED.md)
+              export: {},
             },
-            {
-              label: t("labels.followUs"),
-              icon: XBrandIcon,
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              keywords: ["twitter", "contact", "social", "community"],
-              perform: () => {
-                window.open(
-                  "https://x.com/excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
-            },
-            {
-              label: t("labels.discordChat"),
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              icon: DiscordIcon,
-              keywords: [
-                "chat",
-                "talk",
-                "contact",
-                "bugs",
-                "requests",
-                "report",
-                "feedback",
-                "suggestions",
-                "social",
-                "community",
-              ],
-              perform: () => {
-                window.open(
-                  "https://discord.gg/UexuTaE",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
-            },
-            {
-              label: "YouTube",
-              icon: youtubeIcon,
-              category: DEFAULT_CATEGORIES.links,
-              predicate: true,
-              keywords: ["features", "tutorials", "howto", "help", "community"],
-              perform: () => {
-                window.open(
-                  "https://youtube.com/@excalidraw",
-                  "_blank",
-                  "noopener noreferrer",
-                );
-              },
-            },
-            // flowapi: M0 spike, puts a sample API card at the viewport center
-            {
-              label: "Insert test API card",
-              category: DEFAULT_CATEGORIES.app,
-              predicate: true,
-              keywords: ["flowapi", "api", "card", "spike", "test"],
-              perform: () => {
-                if (!excalidrawAPI) {
-                  return;
-                }
-                const { scrollX, scrollY, zoom, width, height } =
-                  excalidrawAPI.getAppState();
-                const card = createApiCardElement(
-                  {
-                    specId: "s-kx-sign",
-                    key: "A1",
-                    method: "POST",
-                    path: "/v1/sign-requests",
-                    operationId: "createSignRequest",
-                    summary: "Create a sign request for a document",
-                  },
-                  {
-                    x: width / 2 / zoom.value - scrollX - 150,
-                    y: height / 2 / zoom.value - scrollY - 52,
-                  },
-                );
-                excalidrawAPI.updateScene({
-                  elements: [
-                    ...excalidrawAPI.getSceneElementsIncludingDeleted(),
-                    card,
-                  ],
-                  appState: { selectedElementIds: { [card.id]: true } },
-                  captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-                });
-              },
-            },
-            {
-              label: t("labels.installPWA"),
-              category: DEFAULT_CATEGORIES.app,
-              predicate: () => !!pwaEvent,
-              perform: () => {
-                if (pwaEvent) {
-                  pwaEvent.prompt();
-                  pwaEvent.userChoice.then(() => {
-                    // event cannot be reused, but we'll hopefully
-                    // grab new one as the event should be fired again
-                    pwaEvent = null;
-                  });
-                }
-              },
-            },
-          ]}
-        />
-        {isVisualDebuggerEnabled() && excalidrawAPI && (
-          <DebugCanvas
-            appState={excalidrawAPI.getAppState()}
-            scale={window.devicePixelRatio}
-            ref={debugCanvasRef}
+          }}
+          langCode={langCode}
+          renderCustomStats={renderCustomStats}
+          detectScroll={false}
+          // flowapi: AI features are removed (see REMOVED.md)
+          aiEnabled={false}
+          handleKeyboardGlobally={true}
+          autoFocus={true}
+          theme={editorTheme}
+          onThemeChange={setAppTheme}
+          onLinkOpen={(element, event) => {
+            if (element.link && isElementLink(element.link)) {
+              event.preventDefault();
+              excalidrawAPI?.setViewport({
+                target: element.link,
+                fit: "scale-down",
+                animation: true,
+              });
+            }
+          }}
+        >
+          <AppMainMenu
+            theme={appTheme}
+            refresh={() => forceRefresh((prev) => !prev)}
           />
-        )}
-      </Excalidraw>
+          <AppWelcomeScreen />
+          <OverwriteConfirmDialog>
+            <OverwriteConfirmDialog.Actions.ExportToImage />
+            <OverwriteConfirmDialog.Actions.SaveToDisk />
+          </OverwriteConfirmDialog>
+          <AppFooter onChange={() => excalidrawAPI?.refresh()} />
+          {localStorageQuotaExceeded && (
+            <div className="alert alert--danger">
+              {t("alerts.localStorageQuotaExceeded")}
+            </div>
+          )}
+          {errorMessage && (
+            <ErrorDialog onClose={() => setErrorMessage("")}>
+              {errorMessage}
+            </ErrorDialog>
+          )}
+
+          <CommandPalette
+            customCommandPaletteItems={[
+              {
+                label: "GitHub",
+                icon: GithubIcon,
+                category: DEFAULT_CATEGORIES.links,
+                predicate: true,
+                keywords: [
+                  "issues",
+                  "bugs",
+                  "requests",
+                  "report",
+                  "features",
+                  "social",
+                  "community",
+                ],
+                perform: () => {
+                  window.open(
+                    "https://github.com/excalidraw/excalidraw",
+                    "_blank",
+                    "noopener noreferrer",
+                  );
+                },
+              },
+              {
+                label: t("labels.followUs"),
+                icon: XBrandIcon,
+                category: DEFAULT_CATEGORIES.links,
+                predicate: true,
+                keywords: ["twitter", "contact", "social", "community"],
+                perform: () => {
+                  window.open(
+                    "https://x.com/excalidraw",
+                    "_blank",
+                    "noopener noreferrer",
+                  );
+                },
+              },
+              {
+                label: t("labels.discordChat"),
+                category: DEFAULT_CATEGORIES.links,
+                predicate: true,
+                icon: DiscordIcon,
+                keywords: [
+                  "chat",
+                  "talk",
+                  "contact",
+                  "bugs",
+                  "requests",
+                  "report",
+                  "feedback",
+                  "suggestions",
+                  "social",
+                  "community",
+                ],
+                perform: () => {
+                  window.open(
+                    "https://discord.gg/UexuTaE",
+                    "_blank",
+                    "noopener noreferrer",
+                  );
+                },
+              },
+              {
+                label: "YouTube",
+                icon: youtubeIcon,
+                category: DEFAULT_CATEGORIES.links,
+                predicate: true,
+                keywords: [
+                  "features",
+                  "tutorials",
+                  "howto",
+                  "help",
+                  "community",
+                ],
+                perform: () => {
+                  window.open(
+                    "https://youtube.com/@excalidraw",
+                    "_blank",
+                    "noopener noreferrer",
+                  );
+                },
+              },
+              // flowapi: M0 spike, puts a sample API card at the viewport center
+              {
+                label: "Insert test API card",
+                category: DEFAULT_CATEGORIES.app,
+                predicate: true,
+                keywords: ["flowapi", "api", "card", "spike", "test"],
+                perform: () => {
+                  if (!excalidrawAPI) {
+                    return;
+                  }
+                  const { scrollX, scrollY, zoom, width, height } =
+                    excalidrawAPI.getAppState();
+                  const card = createApiCardElement(
+                    {
+                      specId: "s-kx-sign",
+                      key: "A1",
+                      method: "POST",
+                      path: "/v1/sign-requests",
+                      operationId: "createSignRequest",
+                      summary: "Create a sign request for a document",
+                    },
+                    {
+                      x: width / 2 / zoom.value - scrollX - 150,
+                      y: height / 2 / zoom.value - scrollY - 52,
+                    },
+                  );
+                  excalidrawAPI.updateScene({
+                    elements: [
+                      ...excalidrawAPI.getSceneElementsIncludingDeleted(),
+                      card,
+                    ],
+                    appState: { selectedElementIds: { [card.id]: true } },
+                    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+                  });
+                },
+              },
+              {
+                label: t("labels.installPWA"),
+                category: DEFAULT_CATEGORIES.app,
+                predicate: () => !!pwaEvent,
+                perform: () => {
+                  if (pwaEvent) {
+                    pwaEvent.prompt();
+                    pwaEvent.userChoice.then(() => {
+                      // event cannot be reused, but we'll hopefully
+                      // grab new one as the event should be fired again
+                      pwaEvent = null;
+                    });
+                  }
+                },
+              },
+            ]}
+          />
+          {isVisualDebuggerEnabled() && excalidrawAPI && (
+            <DebugCanvas
+              appState={excalidrawAPI.getAppState()}
+              scale={window.devicePixelRatio}
+              ref={debugCanvasRef}
+            />
+          )}
+        </Excalidraw>
+      </FlowApiShell>
     </div>
   );
 };

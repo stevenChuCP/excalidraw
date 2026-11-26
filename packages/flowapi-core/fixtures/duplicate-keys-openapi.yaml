@@ -1,0 +1,41 @@
+# Test fixture for FlowAPI acceptance checks (written by Claude).
+# Two operations share x-diagram-tag B1: Checks must report it and offer the one-click fix.
+openapi: 3.1.0
+info:
+  title: Orders API
+  version: 0.0.1-fixture
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      summary: Create an order
+      x-diagram-tag: B1
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Get an order
+      x-diagram-tag: B1
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  status: { type: string }
