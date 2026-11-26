@@ -35,6 +35,8 @@ const LABEL_FONT = 14;
 
 const STROKE = "#1e1e1e";
 const MUTED = "#868e96";
+/** an @api line that points at no operation */
+export const BROKEN = "#e03131";
 
 const HEADS: Record<FlowMessage["head"], "triangle" | "arrow" | "bar" | null> =
   {
@@ -47,6 +49,8 @@ const HEADS: Record<FlowMessage["head"], "triangle" | "arrow" | "bar" | null> =
 export type FlowLinkInfo = {
   /** text shown before the arrow label, e.g. "A1" or "ca:E1" */
   tag: string | null;
+  /** an @api line whose key matches no operation */
+  broken: boolean;
   specId: string | null;
   key: string | null;
 };
@@ -64,6 +68,7 @@ export const messageLinkInfo = (
     : link?.key || msg.legacyKey || null;
   return {
     tag,
+    broken: !!msg.ref && !link,
     specId: link?.specId ?? null,
     key: link?.key ?? null,
   };
@@ -77,8 +82,27 @@ const messageText = (msg: FlowMessage, info: FlowLinkInfo) => {
   return lines.join("\n");
 };
 
+/** short, stable hash of a text, for ids */
+export const hash = (text: string) => {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36);
+};
+
 const widest = (text: string) =>
   Math.max(0, ...text.split("\n").map((l) => l.length)) * CHAR_W;
+
+/** changes whenever what the flow draws changes (its text or its links) */
+export const flowRenderKey = (model: ProjectModel, flow: FlowModel) =>
+  hash(
+    `${
+      model.project.flows.find((f) => f.id === flow.id)?.text
+    }\u0000${JSON.stringify(
+      flow.messages.map((m) => messageLinkInfo(model, flow, m)),
+    )}`,
+  );
 
 export type FlowLayoutOptions = {
   /** top-left of the frame in scene coordinates */
@@ -95,6 +119,15 @@ export const layoutFlow = (
 ): ExcalidrawElementSkeleton[] => {
   const pre = flowElementPrefix(flow.id);
   const out: ExcalidrawElementSkeleton[] = [];
+  // stable ids (sids): built from what an element is, not where it is in the
+  // text, so editing the text elsewhere keeps the ids and with them the layout
+  const seen = new Map<string, number>();
+  const sid = (base: string) => {
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    return `${pre}${base}:${n}`;
+  };
+  const partId = (i: number) => flow.parts[i]?.id ?? String(i);
   const children: string[] = [];
   const add = (el: ExcalidrawElementSkeleton & { id: string }) => {
     out.push(el);
@@ -120,7 +153,7 @@ export const layoutFlow = (
   flow.parts.forEach((p, i) => {
     add({
       type: "rectangle",
-      id: `${pre}p${i}`,
+      id: `${pre}p:${p.id}`,
       x: cx(i) - PART_W / 2,
       y: top,
       width: PART_W,
@@ -170,11 +203,17 @@ export const layoutFlow = (
             ];
         add({
           type: "arrow",
-          id: `${pre}m${item.line}`,
+          id: sid(
+            `m:${partId(item.from)}>${partId(item.to)}:${
+              info.tag || hash(item.label)
+            }`,
+          ),
           x: fx,
           y: self ? y + 8 : ay,
           points: points as any,
-          strokeColor: STROKE,
+          width: self ? 60 : Math.abs(points[1][0]),
+          height: self ? 26 : 0,
+          strokeColor: info.broken ? BROKEN : STROKE,
           strokeStyle: item.dashed ? "dashed" : "solid",
           strokeWidth: 1,
           roughness: 0,
@@ -189,6 +228,9 @@ export const layoutFlow = (
               line: item.line,
               specId: info.specId,
               key: info.key,
+              from: partId(item.from),
+              to: partId(item.to),
+              broken: info.broken,
             },
           },
           ...linkData,
@@ -216,7 +258,7 @@ export const layoutFlow = (
         const nh = nLines * LINE_H + 18;
         add({
           type: "rectangle",
-          id: `${pre}n${item.line}`,
+          id: sid(`n:${hash(item.text)}`),
           x: nx,
           y: y + 6,
           width: nw,
@@ -234,6 +276,7 @@ export const layoutFlow = (
         const bx0 = x0 + inset;
         const bx1 = x1 - inset;
         const startY = y;
+        const blockId = sid(`b:${item.type}:${hash(item.label)}`);
         // Mermaid `rect <color>` is a shaded band, the rest are labelled frames
         const shaded = item.type === "rect";
         const at = out.length;
@@ -242,7 +285,7 @@ export const layoutFlow = (
         y += 8;
         const box: ExcalidrawElementSkeleton & { id: string } = {
           type: "rectangle",
-          id: `${pre}b${item.line}`,
+          id: blockId,
           x: bx0,
           y: startY + 4,
           width: bx1 - bx0,
@@ -260,7 +303,7 @@ export const layoutFlow = (
           : [
               {
                 type: "text",
-                id: `${pre}bl${item.line}`,
+                id: `${blockId}:label`,
                 x: bx0 + 8,
                 y: startY + 9,
                 text: `${item.type}${item.label ? `  [${item.label}]` : ""}`,
@@ -274,11 +317,14 @@ export const layoutFlow = (
         children.push(box.id, ...title.map((t) => t.id));
         y += 10;
       } else if (item.kind === "divider") {
+        const dividerId = sid(`d:${hash(item.label)}`);
         add({
           type: "line",
-          id: `${pre}d${item.line}`,
+          id: dividerId,
           x: x0 + depth * 10,
           y: y + 4,
+          width: x1 - x0 - depth * 20,
+          height: 0,
           points: [
             [0, 0],
             [x1 - x0 - depth * 20, 0],
@@ -291,7 +337,7 @@ export const layoutFlow = (
         if (item.label) {
           add({
             type: "text",
-            id: `${pre}dl${item.line}`,
+            id: `${dividerId}:label`,
             x: x0 + depth * 10 + 8,
             y: y + 8,
             text: `[${item.label}]`,
@@ -311,9 +357,11 @@ export const layoutFlow = (
   flow.parts.forEach((_, i) => {
     add({
       type: "line",
-      id: `${pre}life${i}`,
+      id: `${pre}life:${flow.parts[i].id}`,
       x: cx(i),
       y: top + PART_H,
+      width: 0,
+      height: bottom - top - PART_H,
       points: [
         [0, 0],
         [0, bottom - top - PART_H],
@@ -325,7 +373,7 @@ export const layoutFlow = (
     });
   });
   // lifelines go under the arrows
-  const lifelines = out.filter((e) => (e as any).id?.startsWith(`${pre}life`));
+  const lifelines = out.filter((e) => (e as any).id?.startsWith(`${pre}life:`));
   const rest = out.filter((e) => !lifelines.includes(e));
 
   const frame: ExcalidrawElementSkeleton = {
@@ -338,7 +386,13 @@ export const layoutFlow = (
     width:
       Math.max(spanRight + PAD, cx(nParts - 1) + PART_W / 2 + PAD) - opts.x,
     height: bottom + PAD - opts.y,
-    customData: { flowapi: { kind: FLOW_FRAME_KIND, flowId: flow.id } },
+    customData: {
+      flowapi: {
+        kind: FLOW_FRAME_KIND,
+        flowId: flow.id,
+        renderKey: flowRenderKey(model, flow),
+      },
+    },
   };
   return [...lifelines, ...rest, frame];
 };

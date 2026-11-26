@@ -9,3 +9,5 @@ packages/excalidraw/types
 examples/**/public
 dev-dist
 coverage
+# flowapi: fixtures are byte-for-byte copies of the source files
+packages/flowapi-core/fixtures/

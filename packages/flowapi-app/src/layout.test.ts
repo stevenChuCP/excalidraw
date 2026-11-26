@@ -35,13 +35,14 @@ describe("layoutFlow", () => {
       elements.filter((e) => e.type !== "frame" && e.frameId !== frame?.id),
     ).toEqual([]);
     expect(
-      elements.filter((e) => e.type === "rectangle" && /:p\d+$/.test(e.id))
-        .length,
+      elements.filter((e) => e.type === "rectangle" && /:p:/.test(e.id)).length,
     ).toBe(5);
     const apiMessages = flow.messages.filter((m) => m.ref);
     expect(apiMessages.length).toBe(11);
     for (const m of apiMessages) {
-      const arrow = elements.find((e) => e.id === `flow:f-v2:m${m.line}`);
+      const arrow = elements.find(
+        (e) => e.type === "arrow" && e.customData?.flowapi?.line === m.line,
+      );
       expect(arrow?.type).toBe("arrow");
       expect(arrow?.link).toBe(
         `https://app/?element=${cardId("s-kx", m.ref!.key)}`,

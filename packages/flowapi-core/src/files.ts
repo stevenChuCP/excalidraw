@@ -75,6 +75,7 @@ export const importFiles = (
   files: { name: string; text: string }[],
 ): ImportResult => {
   const next: Project = {
+    ...project,
     flows: [...project.flows],
     specs: [...project.specs],
   };
