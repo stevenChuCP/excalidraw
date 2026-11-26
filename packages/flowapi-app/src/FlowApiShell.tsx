@@ -11,11 +11,17 @@ import { viewportCoordsToSceneCoords } from "@excalidraw/common";
 import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import { restoreElements } from "@excalidraw/excalidraw/data/restore";
 import {
+  addOperation,
   arrowsLinkedTo,
+  deleteOperationFromProject,
+  describeOp,
+  fixDuplicateKey,
   importFiles,
   keyProblem,
+  linkArrow,
   planKeys,
   renameKey,
+  unlinkArrow,
   writeKeys,
 } from "@flowapi/core";
 import { fileOpen } from "browser-fs-access";
@@ -28,8 +34,10 @@ import {
   cardsOnBoard as getCardsOnBoard,
   flowsOnBoard as getFlowsOnBoard,
   placeFlow,
+  placeCardInSpecFrame,
   placeOperation,
   rekeyCard,
+  removeCard,
   syncBoard,
 } from "./board";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -41,6 +49,8 @@ import {
   serializeProject,
 } from "./projectFile";
 import { ChecksPanel } from "./ChecksPanel";
+import { FLOW_ARROW_KIND } from "./layout";
+import { LinkPanel } from "./LinkPanel";
 import { SidePanel } from "./SidePanel";
 import { TextEditor } from "./TextEditor";
 import { KeyPatternDialog } from "./KeyPatternDialog";
@@ -50,9 +60,15 @@ import { S } from "./strings";
 
 import "./flowapi.scss";
 
-import type { Issue, KeyPattern, Operation } from "@flowapi/core";
+import type {
+  Issue,
+  KeyPattern,
+  Operation,
+  OperationStub,
+} from "@flowapi/core";
 
 import type { ProjectFile } from "./projectFile";
+import type { SelectedArrow } from "./LinkPanel";
 
 import type { DragPayload } from "./ProjectPanel";
 
@@ -118,6 +134,8 @@ export const FlowApiShell = ({
   };
   const [keySpecId, setKeySpecId] = useState<string | null>(null);
   const [pendingOpen, setPendingOpen] = useState<ProjectFile | null>(null);
+  const [selArrow, setSelArrow] = useState<SelectedArrow | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Operation | null>(null);
   const [board, setBoard] = useState({
     cards: new Set<string>(),
     flows: new Set<string>(),
@@ -142,6 +160,24 @@ export const FlowApiShell = ({
       return;
     }
     let sig = "";
+    let selSig = "";
+    const trackSelection = (
+      elements: readonly any[],
+      selected: Record<string, true>,
+    ) => {
+      const ids = Object.keys(selected);
+      const el =
+        ids.length === 1 ? elements.find((e) => e.id === ids[0]) : null;
+      const data = el?.type === "arrow" && el.customData?.flowapi;
+      const next =
+        data?.kind === FLOW_ARROW_KIND ? `${data.flowId}|${data.line}` : "";
+      if (next !== selSig) {
+        selSig = next;
+        setSelArrow(
+          next ? { flowId: data.flowId, line: data.line as number } : null,
+        );
+      }
+    };
     const update = (elements: readonly any[]) => {
       const cards = getCardsOnBoard(elements);
       const flows = getFlowsOnBoard(elements);
@@ -153,7 +189,10 @@ export const FlowApiShell = ({
       }
     };
     update(excalidrawAPI.getSceneElements());
-    return excalidrawAPI.onChange((elements) => update(elements));
+    return excalidrawAPI.onChange((elements, appState) => {
+      update(elements);
+      trackSelection(elements, appState.selectedElementIds);
+    });
   }, [excalidrawAPI]);
 
   useEffect(() => {
@@ -268,6 +307,103 @@ export const FlowApiShell = ({
       }
     }
   }, [openProjectFile, toast]);
+
+  /** a card that has no place on the board yet goes in its spec's frame */
+  const ensureCard = (specId: string, key: string, nearFlowId?: string) => {
+    const m = store.getState().model;
+    const spec = m.specs.find((s) => s.id === specId);
+    const op = spec?.ops.find((o) => o.key === key);
+    if (excalidrawAPI && spec && op) {
+      placeCardInSpecFrame(excalidrawAPI, op, spec.name, nearFlowId);
+    }
+  };
+
+  const onLink = (arrow: SelectedArrow, specId: string, key: string) => {
+    store.setProject(
+      linkArrow(store.getState().model, arrow.flowId, arrow.line, specId, key),
+    );
+    ensureCard(specId, key, arrow.flowId);
+    toast(S.linked(key));
+  };
+
+  const onCreate = (
+    arrow: SelectedArrow,
+    specId: string,
+    stub: OperationStub,
+  ) => {
+    const file = store.getState().project.specs.find((s) => s.id === specId);
+    if (!file) {
+      return;
+    }
+    store.setFileText(specId, addOperation(file.text, stub));
+    const m = store.getState().model;
+    store.setProject(linkArrow(m, arrow.flowId, arrow.line, specId, stub.key));
+    ensureCard(specId, stub.key, arrow.flowId);
+    toast(S.created(stub.key, file.name));
+  };
+
+  const onUnlink = (arrow: SelectedArrow) => {
+    store.setProject(
+      unlinkArrow(store.getState().model, arrow.flowId, arrow.line),
+    );
+    toast(S.unlinked);
+  };
+
+  const onDeleteOperation = (op: Operation) => {
+    const m = store.getState().model;
+    if (excalidrawAPI && op.key) {
+      removeCard(excalidrawAPI, op.specId, op.key);
+    }
+    store.setProject(deleteOperationFromProject(m, op));
+    toast(S.deleted(describeOp(op)));
+  };
+
+  const exportFile = async (fileId: string) => {
+    const { project: p } = store.getState();
+    const file = [...p.flows, ...p.specs].find((f) => f.id === fileId);
+    if (!file) {
+      return;
+    }
+    const isFlow = p.flows.some((f) => f.id === fileId);
+    const mime = isFlow
+      ? "text/plain"
+      : /\.json$/i.test(file.name)
+      ? "application/json"
+      : "application/yaml";
+    const download = savesAsDownload();
+    try {
+      await saveTextFile(
+        file.text,
+        file.name,
+        mime,
+        isFlow ? "Mermaid flow" : "OpenAPI spec",
+      );
+      toast(`${S.exported(file.name)}${download ? `\n${S.downloadNote}` : ""}`);
+    } catch (e) {
+      if (!isAbort(e)) {
+        toast((e as Error).message);
+      }
+    }
+  };
+
+  const renderFix = (issue: Issue) =>
+    issue.fix?.kind === "duplicateKey" ? (
+      <button
+        type="button"
+        className="flowapi-btn flowapi-btn--small flowapi-fix"
+        data-testid="flowapi-fix"
+        onClick={(e) => {
+          e.stopPropagation();
+          const { specId, key } = issue.fix!;
+          store.setProject(
+            fixDuplicateKey(store.getState().model, specId, key),
+          );
+          toast(S.fixed(key));
+        }}
+      >
+        {S.fix}
+      </button>
+    ) : null;
 
   const onRenameKey = (op: Operation, newKey: string): string | null => {
     const m = store.getState().model;
@@ -429,6 +565,8 @@ export const FlowApiShell = ({
             openProject,
             saveProject,
             renameKey: onRenameKey,
+            exportFile,
+            deleteOperation: (op) => setPendingDelete(op),
           }}
         />
         <input
@@ -453,6 +591,16 @@ export const FlowApiShell = ({
         onDropCapture={onDrop}
       >
         {children}
+        {selArrow && (
+          <LinkPanel
+            key={`${selArrow.flowId}|${selArrow.line}`}
+            model={model}
+            arrow={selArrow}
+            onLink={(specId, key) => onLink(selArrow, specId, key)}
+            onCreate={(specId, stub) => onCreate(selArrow, specId, stub)}
+            onUnlink={() => onUnlink(selArrow)}
+          />
+        )}
         {sideOpen && (
           <SidePanel
             tabs={[
@@ -474,7 +622,11 @@ export const FlowApiShell = ({
             onClose={() => setSideOpen(false)}
           >
             {activeTab === "checks" ? (
-              <ChecksPanel model={model} onIssueClick={onIssueClick} />
+              <ChecksPanel
+                model={model}
+                onIssueClick={onIssueClick}
+                renderFix={renderFix}
+              />
             ) : (
               (() => {
                 const file = [...project.flows, ...project.specs].find(
@@ -493,6 +645,48 @@ export const FlowApiShell = ({
           </SidePanel>
         )}
       </div>
+      {pendingDelete && (
+        <ConfirmDialog
+          title={S.deleteTitle(describeOp(pendingDelete))}
+          confirmLabel={S.deleteConfirm}
+          danger
+          onConfirm={() => {
+            const op = pendingDelete;
+            setPendingDelete(null);
+            onDeleteOperation(op);
+          }}
+          onCancel={() => setPendingDelete(null)}
+          testId="flowapi-delete-dialog"
+        >
+          <p>{S.deleteBody}</p>
+          {(() => {
+            const arrows = arrowsLinkedTo(
+              model,
+              pendingDelete.specId,
+              pendingDelete.key,
+            );
+            return (
+              <>
+                <p data-testid="flowapi-delete-count">
+                  {S.deleteArrows(arrows.length)}
+                </p>
+                {arrows.length > 0 && (
+                  <ul className="flowapi-delete-list">
+                    {arrows.map((a) => (
+                      <li
+                        key={`${a.flowId}:${a.line}`}
+                        data-testid="flowapi-delete-arrow"
+                      >
+                        {S.arrowAt(a.flowName, a.line, a.label)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            );
+          })()}
+        </ConfirmDialog>
+      )}
       {pendingOpen && (
         <ConfirmDialog
           title={S.replaceTitle}

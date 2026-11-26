@@ -3,6 +3,7 @@ import {
   convertToExcalidrawElements,
   defaultGetElementLinkFromSelection,
   newElementWith,
+  newFrameElement,
 } from "@excalidraw/element";
 import { API_CARD_KIND, getApiCardData } from "@flowapi/card";
 import { createApiCardElement } from "@flowapi/card/create";
@@ -477,5 +478,94 @@ export const removeCard = (
       e.id === id ? newElementWith(e, { isDeleted: true }) : e,
     ),
     captureUpdate: CaptureUpdateAction.NEVER,
+  });
+};
+
+export const specFrameId = (specId: string) => `spec:${specId}`;
+export const SPEC_FRAME_KIND = "specFrame";
+
+/**
+ * Puts an operation's card on the board by itself (decided: linking an arrow
+ * to an operation with no card places it next to its spec's frame). The card
+ * goes at the bottom of the spec's frame, which is made beside the flow's
+ * frame the first time. Does nothing when the card is already there.
+ */
+export const placeCardInSpecFrame = (
+  api: ExcalidrawImperativeAPI,
+  op: Operation,
+  specName: string,
+  nearFlowId?: string,
+) => {
+  if (!op.key) {
+    return;
+  }
+  const id = cardId(op.specId, op.key);
+  const all = api.getSceneElementsIncludingDeleted();
+  if (all.some((e) => e.id === id && !e.isDeleted)) {
+    return;
+  }
+  const PAD = 24;
+  const GAP = 20;
+  const fid = specFrameId(op.specId);
+  let frame: ExcalidrawElement | undefined = all.find(
+    (e) => e.id === fid && !e.isDeleted,
+  );
+  const card0 = createApiCardElement(cardDataOf(op), { x: 0, y: 0 });
+  let x: number;
+  let y: number;
+  if (frame) {
+    const inFrame = all.filter((e) => !e.isDeleted && e.frameId === fid);
+    const bottom = inFrame.length
+      ? Math.max(...inFrame.map((e) => e.y + e.height))
+      : frame.y + PAD - GAP;
+    x = frame.x + PAD;
+    y = bottom + GAP;
+  } else {
+    const near = nearFlowId
+      ? all.find((e) => e.id === flowFrameId(nearFlowId) && !e.isDeleted)
+      : null;
+    const anchor =
+      near ||
+      all
+        .filter((e) => !e.isDeleted)
+        .reduce<ExcalidrawElement | null>(
+          (r, e) => (!r || e.x + e.width > r.x + r.width ? e : r),
+          null,
+        );
+    const fx = anchor ? anchor.x + anchor.width + 80 : 0;
+    const fy = anchor ? anchor.y : 0;
+    frame = {
+      ...newFrameElement({
+        x: fx,
+        y: fy,
+        width: card0.width + PAD * 2,
+        height: card0.height + PAD * 2,
+        name: specName,
+      }),
+      id: fid,
+      customData: { flowapi: { kind: SPEC_FRAME_KIND, specId: op.specId } },
+    } as ExcalidrawElement;
+    x = fx + PAD;
+    y = fy + PAD;
+  }
+  const card = {
+    ...card0,
+    id,
+    x,
+    y,
+    frameId: fid,
+  } as ExcalidrawElement;
+  const f = frame;
+  const nextFrame = newElementWith(f, {
+    width: Math.max(f.width, x + card.width + PAD - f.x),
+    height: Math.max(f.height, y + card.height + PAD - f.y),
+  });
+  api.updateScene({
+    elements: [
+      ...all.filter((e) => e.id !== id && e.id !== fid),
+      card,
+      nextFrame,
+    ],
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
 };

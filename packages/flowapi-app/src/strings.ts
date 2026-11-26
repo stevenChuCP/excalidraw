@@ -128,4 +128,14 @@ export const S = {
   closeIcon: "×",
   openAtLine: "Open this line",
   flowTab: (name: string) => name,
+  linkChange: "Change",
+  createBadPath: "The path must start with /",
+  createExists: (key: string) => `${key} already has this method and path`,
+  createBadOperationId: "operationId: letters, digits and _ only",
+  created: (key: string, spec: string) =>
+    `Created ${key} in ${spec} and linked it`,
+  unlinked: "Unlinked the arrow (the spec keeps its key)",
+  fixed: (key: string) => `Gave the duplicate of ${key} a new key`,
+  arrowAt: (flow: string, line: number, label: string) =>
+    `${flow}, line ${line}: ${label}`,
 };

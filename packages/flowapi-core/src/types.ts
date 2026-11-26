@@ -34,6 +34,8 @@ export type Issue = {
   /** where it is: which file and line */
   fileId?: string;
   line?: number;
+  /** a one-click fix the app can apply */
+  fix?: { kind: "duplicateKey"; specId: string; key: string };
 };
 
 export type HttpMethod =

@@ -330,6 +330,7 @@ export const parseSpec = (
         message: `Key ${ops[0].key} is on ${ops.length} operations (${ops
           .map((o) => o.operationId || `${o.method} ${o.path}`)
           .join(", ")}). Keys must be unique in a spec.`,
+        fix: { kind: "duplicateKey", specId: id, key: ops[0].key },
       });
     }
   }
