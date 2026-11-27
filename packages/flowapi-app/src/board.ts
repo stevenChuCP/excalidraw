@@ -5,7 +5,7 @@ import {
   newElementWith,
   newFrameElement,
 } from "@excalidraw/element";
-import { API_CARD_KIND, getApiCardData } from "@flowapi/card";
+import { API_CARD_KIND, apiCardHeight, getApiCardData } from "@flowapi/card";
 import { createApiCardElement } from "@flowapi/card/create";
 
 import type { ExcalidrawElement } from "@excalidraw/element/types";
@@ -28,6 +28,9 @@ import type { FlowModel, Operation, ProjectModel } from "@flowapi/core";
 // Puts sidebar items on the canvas and keeps what is there in step with the
 // project model (card text and gap badge, arrow links).
 
+/** M6: flow parts can't be moved by hand, so a redraw lays out everything */
+const PINNED_FLOWS = true;
+
 export const linkToElement = (id: string) =>
   defaultGetElementLinkFromSelection(id, "element");
 
@@ -39,6 +42,7 @@ const cardDataOf = (op: Operation) => ({
   operationId: op.operationId,
   summary: op.summary,
   gap: op.gaps.length > 0,
+  details: op.details,
 });
 
 const focus = (api: ExcalidrawImperativeAPI, id: string) => {
@@ -80,30 +84,20 @@ export const placeOperation = (
   api: ExcalidrawImperativeAPI,
   op: Operation,
   pos: { x: number; y: number },
+  specName = op.specId,
 ) => {
   if (!op.key) {
     return;
   }
   const id = cardId(op.specId, op.key);
-  const all = api.getSceneElementsIncludingDeleted();
-  const existing = all.find((e) => e.id === id);
-  if (existing && !existing.isDeleted) {
+  if (api.getSceneElements().some((e) => e.id === id)) {
     focus(api, id);
     return;
   }
-  const fresh = createApiCardElement(cardDataOf(op), pos);
-  const card = existing
-    ? newElementWith(existing, {
-        isDeleted: false,
-        x: pos.x,
-        y: pos.y,
-        customData: fresh.customData,
-      })
-    : ({ ...fresh, id } as typeof fresh);
+  placeCardInSpecFrame(api, op, specName, undefined, pos);
   api.updateScene({
-    elements: [...all.filter((e) => e.id !== id), card],
     appState: { selectedElementIds: { [id]: true } },
-    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    captureUpdate: CaptureUpdateAction.NEVER,
   });
 };
 
@@ -198,6 +192,11 @@ export const refreshFlow = (
 
   /** how far the user moved an element away from where the layout put it */
   const userDelta = (was: ExcalidrawElement | undefined): Delta | null => {
+    // flow parts are pinned (M6): only boards from before M6 can have parts
+    // moved by hand, and those snap back to the layout too
+    if (PINNED_FLOWS) {
+      return null;
+    }
     const auto = was?.customData?.flowapi?.auto;
     if (!was || !Array.isArray(auto)) {
       return null;
@@ -296,10 +295,10 @@ export const refreshFlow = (
 
   const children = [...lifelines, ...moved, ...labels];
   let [minX, minY, maxX, maxY] = [
-    frame.x,
-    frame.y,
-    frame.x + frame.width,
-    frame.y + frame.height,
+    freshFrame.x,
+    freshFrame.y,
+    freshFrame.x + freshFrame.width,
+    freshFrame.y + freshFrame.height,
   ];
   for (const el of children) {
     minX = Math.min(minX, el.x - 20);
@@ -366,12 +365,21 @@ export const syncBoard = (
       if (!op) {
         return el;
       }
-      const data = { ...cardDataOf(op), kind: API_CARD_KIND };
-      if (JSON.stringify(data) === JSON.stringify({ ...card })) {
+      const data = {
+        ...cardDataOf(op),
+        kind: API_CARD_KIND as typeof API_CARD_KIND,
+        ...(card.expanded ? { expanded: true } : {}),
+      };
+      const height = apiCardHeight(data);
+      if (
+        JSON.stringify(data) === JSON.stringify({ ...card }) &&
+        el.height === height
+      ) {
         return el;
       }
       changed = true;
       return newElementWith(el, {
+        height,
         customData: { ...el.customData, flowapi: data },
       });
     }
@@ -383,10 +391,8 @@ export const syncBoard = (
         return el;
       }
       const info = messageLinkInfo(model, flow, msg);
-      const link =
-        info.specId && info.key
-          ? linkToElement(cardId(info.specId, info.key))
-          : null;
+      // M6: the key chip links the arrow to its card, not an element link
+      const link = null;
       if (
         arrow.specId === info.specId &&
         arrow.key === info.key &&
@@ -405,14 +411,144 @@ export const syncBoard = (
     }
     return el;
   });
-  if (changed) {
+  const arranged = arrangeCards(
+    next,
+    (id) => specNameOf(model, id),
+    rankOf(model),
+  );
+  if (changed || arranged.changed) {
     api.updateScene({
-      elements: next,
+      elements: arranged.elements,
       captureUpdate: CaptureUpdateAction.NEVER,
     });
   }
-  return changed;
+  return changed || arranged.changed;
 };
+
+const specNameOf = (model: ProjectModel, specId: string) =>
+  model.specs.find((s) => s.id === specId)?.name || specId;
+
+const CARD_PAD = 24;
+const CARD_GAP = 20;
+
+/** a card's place in its spec: the order of the spec file, as in the sidebar */
+export type CardRank = (specId: string, key: string) => number;
+
+const rankOf = (model: ProjectModel): CardRank => {
+  const ranks = new Map<string, number>();
+  for (const s of model.specs) {
+    s.ops.forEach((o, i) => ranks.set(cardId(s.id, o.key), i));
+  }
+  return (specId, key) => ranks.get(cardId(specId, key)) ?? Infinity;
+};
+
+/**
+ * Cards live in their spec's frame (M6): stacked in the spec's order (or
+ * their current order when no rank is given), the frame sized to fit. Cards
+ * outside a frame (boards from before M6) move into one, made where they are.
+ */
+export const arrangeCards = (
+  all: readonly ExcalidrawElement[],
+  specName: (specId: string) => string,
+  rank?: CardRank,
+) => {
+  const live = all.filter((e) => !e.isDeleted);
+  const bySpec = new Map<string, ExcalidrawElement[]>();
+  for (const el of live) {
+    const d = getApiCardData(el);
+    if (d) {
+      bySpec.set(d.specId, [...(bySpec.get(d.specId) || []), el]);
+    }
+  }
+  const updates = new Map<string, ExcalidrawElement>();
+  const added: ExcalidrawElement[] = [];
+  for (const [specId, cards] of bySpec) {
+    const fid = specFrameId(specId);
+    let frame = live.find((e) => e.id === fid);
+    const created = !frame;
+    if (!frame) {
+      frame = {
+        ...newFrameElement({
+          x: Math.min(...cards.map((c) => c.x)) - CARD_PAD,
+          y: Math.min(...cards.map((c) => c.y)) - CARD_PAD,
+          width: 100,
+          height: 100,
+          name: specName(specId),
+        }),
+        id: fid,
+        customData: { flowapi: { kind: SPEC_FRAME_KIND, specId } },
+      } as ExcalidrawElement;
+    }
+    cards.sort((a, b) => {
+      const da = getApiCardData(a)!;
+      const db = getApiCardData(b)!;
+      return (
+        (rank ? rank(da.specId, da.key) - rank(db.specId, db.key) : 0) ||
+        a.y - b.y
+      );
+    });
+    let y = frame.y + CARD_PAD;
+    let w = 0;
+    for (const c of cards) {
+      const h = apiCardHeight(getApiCardData(c));
+      const x = frame.x + CARD_PAD;
+      if (c.x !== x || c.y !== y || c.height !== h || c.frameId !== fid) {
+        updates.set(c.id, newElementWith(c, { x, y, height: h, frameId: fid }));
+      }
+      y += h + CARD_GAP;
+      w = Math.max(w, c.width);
+    }
+    const width = w + CARD_PAD * 2;
+    const height = y - CARD_GAP + CARD_PAD - frame.y;
+    if (created) {
+      added.push({ ...frame, width, height } as ExcalidrawElement);
+    } else if (frame.width !== width || frame.height !== height) {
+      updates.set(fid, newElementWith(frame, { width, height }));
+    }
+  }
+  if (!updates.size && !added.length) {
+    return { elements: all, changed: false };
+  }
+  return {
+    elements: [...all.map((e) => updates.get(e.id) || e), ...added],
+    changed: true,
+  };
+};
+
+/** expands or collapses a card; the cards below it move */
+export const toggleCard = (
+  api: ExcalidrawImperativeAPI,
+  id: string,
+  model: ProjectModel,
+) => {
+  const all = api.getSceneElementsIncludingDeleted();
+  const card = all.find((e) => e.id === id && !e.isDeleted);
+  const data = getApiCardData(card);
+  if (!card || !data) {
+    return;
+  }
+  const flowapi = { ...data, expanded: !data.expanded };
+  if (!flowapi.expanded) {
+    delete (flowapi as { expanded?: boolean }).expanded;
+  }
+  const next = all.map((e) =>
+    e.id === id
+      ? newElementWith(e, {
+          height: apiCardHeight(flowapi),
+          customData: { ...e.customData, flowapi },
+        })
+      : e,
+  );
+  api.updateScene({
+    elements: arrangeCards(next, (s) => specNameOf(model, s), rankOf(model))
+      .elements,
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  });
+};
+
+/** moves the view to a card and selects it */
+export const focusCard = (api: ExcalidrawImperativeAPI, id: string) =>
+  focus(api, id);
 
 /** compares element links by target id only (the page URL may differ) */
 const sameTarget = (a: string | null, b: string | null) => {
@@ -452,9 +588,12 @@ export const rekeyCard = (
   } as ExcalidrawElement;
   const selected = api.getAppState().selectedElementIds[oldId];
   api.updateScene({
-    elements: all
-      .filter((e) => e.id !== newId)
-      .map((e) => (e.id === oldId ? moved : e)),
+    elements: arrangeCards(
+      all
+        .filter((e) => e.id !== newId)
+        .map((e) => (e.id === oldId ? moved : e)),
+      (s) => s,
+    ).elements,
     ...(selected
       ? { appState: { selectedElementIds: { [newId]: true } } }
       : {}),
@@ -474,9 +613,12 @@ export const removeCard = (
     return;
   }
   api.updateScene({
-    elements: all.map((e) =>
-      e.id === id ? newElementWith(e, { isDeleted: true }) : e,
-    ),
+    elements: arrangeCards(
+      all.map((e) =>
+        e.id === id ? newElementWith(e, { isDeleted: true }) : e,
+      ),
+      (s) => s,
+    ).elements,
     captureUpdate: CaptureUpdateAction.NEVER,
   });
 };
@@ -495,6 +637,7 @@ export const placeCardInSpecFrame = (
   op: Operation,
   specName: string,
   nearFlowId?: string,
+  at?: { x: number; y: number },
 ) => {
   if (!op.key) {
     return;
@@ -532,8 +675,8 @@ export const placeCardInSpecFrame = (
           (r, e) => (!r || e.x + e.width > r.x + r.width ? e : r),
           null,
         );
-    const fx = anchor ? anchor.x + anchor.width + 80 : 0;
-    const fy = anchor ? anchor.y : 0;
+    const fx = at ? at.x : anchor ? anchor.x + anchor.width + 80 : 0;
+    const fy = at ? at.y : anchor ? anchor.y : 0;
     frame = {
       ...newFrameElement({
         x: fx,
@@ -561,11 +704,10 @@ export const placeCardInSpecFrame = (
     height: Math.max(f.height, y + card.height + PAD - f.y),
   });
   api.updateScene({
-    elements: [
-      ...all.filter((e) => e.id !== id && e.id !== fid),
-      card,
-      nextFrame,
-    ],
+    elements: arrangeCards(
+      [...all.filter((e) => e.id !== id && e.id !== fid), card, nextFrame],
+      () => specName,
+    ).elements,
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
 };

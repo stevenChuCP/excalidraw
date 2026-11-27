@@ -4,6 +4,8 @@ import {
   updateActiveTool,
 } from "@excalidraw/common";
 
+// flowapi: flow parts are not deleted on the canvas
+import { isDeletablePinned, isPinnedElement } from "@flowapi/card";
 import { getNonDeletedElements } from "@excalidraw/element";
 import { fixBindingsAfterDeletion } from "@excalidraw/element";
 import { LinearElementEditor } from "@excalidraw/element";
@@ -278,6 +280,25 @@ export const actionDeleteSelected = register<{
           },
         },
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      };
+    }
+
+    // flowapi: flow parts are removed by editing the flow text, not Delete
+    const pinnedIds = new Set(
+      elements
+        .filter((el) => isPinnedElement(el) && !isDeletablePinned(el))
+        .map((el) => el.id),
+    );
+    if (
+      Object.keys(appState.selectedElementIds).some((id) => pinnedIds.has(id))
+    ) {
+      appState = {
+        ...appState,
+        selectedElementIds: Object.fromEntries(
+          Object.entries(appState.selectedElementIds).filter(
+            ([id]) => !pinnedIds.has(id),
+          ),
+        ),
       };
     }
 

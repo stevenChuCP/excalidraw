@@ -1,4 +1,5 @@
-import { FONT_FAMILY } from "@excalidraw/common";
+import { FONT_FAMILY, ROUNDNESS } from "@excalidraw/common";
+import { methodPalette } from "@flowapi/card";
 import { brSplit } from "@flowapi/core";
 
 import type { ExcalidrawElementSkeleton } from "@excalidraw/element/transform";
@@ -47,9 +48,16 @@ const HEADS: Record<FlowMessage["head"], "triangle" | "arrow" | "bar" | null> =
     none: null,
   };
 
+export const FLOW_CHIP_KIND = "flowChip";
+const CHIP_H = 20;
+const CHIP_FONT = 12;
+const BROKEN_CHIP = { bg: "#fbebeb", fg: "#c92a2a" };
+
 export type FlowLinkInfo = {
-  /** text shown before the arrow label, e.g. "A1" or "ca:E1" */
+  /** the key chip's text at the start of the arrow label, e.g. "A1" or "ca:E1" */
   tag: string | null;
+  /** method of the linked operation, for the chip color */
+  method: string | null;
   /** an @api line whose key matches no operation */
   broken: boolean;
   specId: string | null;
@@ -67,21 +75,22 @@ export const messageLinkInfo = (
       ? `${msg.ref.alias}:${msg.ref.key}`
       : msg.ref.key
     : link?.key || msg.legacyKey || null;
+  const op = link
+    ? model.specs
+        .find((s) => s.id === link.specId)
+        ?.ops.find((o) => o.key === link.key)
+    : undefined;
   return {
     tag,
+    method: op?.method ?? null,
     broken: !!msg.ref && !link,
     specId: link?.specId ?? null,
     key: link?.key ?? null,
   };
 };
 
-const messageText = (msg: FlowMessage, info: FlowLinkInfo) => {
-  const lines = brSplit(msg.label || msg.text || "");
-  if (info.tag) {
-    lines[0] = `${info.tag} · ${lines[0] || ""}`.trim();
-  }
-  return lines.join("\n");
-};
+const messageText = (msg: FlowMessage) =>
+  brSplit(msg.label || msg.text || "").join("\n");
 
 /** short, stable hash of a text, for ids */
 export const hash = (text: string) => {
@@ -110,7 +119,7 @@ export type FlowLayoutOptions = {
   x: number;
   y: number;
   /** element link to a card id, e.g. "https://host/?element=op:s:A1" */
-  linkTo: (elementId: string) => string;
+  linkTo?: (elementId: string) => string;
 };
 
 export const layoutFlow = (
@@ -139,7 +148,9 @@ export const layoutFlow = (
   let colW = 240;
   for (const m of flow.messages) {
     const span = Math.abs(m.to - m.from);
-    const w = widest(messageText(m, messageLinkInfo(model, flow, m))) + 60;
+    const tag = messageLinkInfo(model, flow, m).tag;
+    const w =
+      widest(messageText(m)) + 60 + (tag ? (tag.length * 8 + 28) * 2 : 0);
     colW = Math.max(colW, span ? w / span : 0);
   }
   colW = Math.min(colW, 520);
@@ -179,17 +190,11 @@ export const layoutFlow = (
     for (const item of items) {
       if (item.kind === "msg") {
         const info = messageLinkInfo(model, flow, item);
-        const text = messageText(item, info);
+        const text = messageText(item);
         const nLines = text.split("\n").length;
         const self = item.from === item.to;
         const rowH = nLines * LINE_H + (self ? 46 : 26);
         const ay = y + rowH / 2;
-        const linkData =
-          info.specId && info.key
-            ? {
-                link: opts.linkTo(cardId(info.specId, info.key)),
-              }
-            : {};
         const fx = cx(item.from);
         const points: [number, number][] = self
           ? [
@@ -202,13 +207,14 @@ export const layoutFlow = (
               [0, 0],
               [cx(item.to) - fx, 0],
             ];
+        const arrowId = sid(
+          `m:${partId(item.from)}>${partId(item.to)}:${
+            info.tag || hash(item.label)
+          }`,
+        );
         add({
           type: "arrow",
-          id: sid(
-            `m:${partId(item.from)}>${partId(item.to)}:${
-              info.tag || hash(item.label)
-            }`,
-          ),
+          id: arrowId,
           x: fx,
           y: self ? y + 8 : ay,
           points: points as any,
@@ -234,8 +240,52 @@ export const layoutFlow = (
               broken: info.broken,
             },
           },
-          ...linkData,
         });
+        if (info.tag) {
+          // the key chip: left of the label, on the arrow line
+          const palette = info.broken
+            ? BROKEN_CHIP
+            : info.specId
+            ? methodPalette(info.method)
+            : methodPalette(null);
+          const chipW = info.tag.length * 8 + 16;
+          // at the arrow's source end, clear of the centered label
+          const chipX = self
+            ? fx + 8
+            : points[1][0] >= 0
+            ? fx + 12
+            : fx - 12 - chipW;
+          add({
+            type: "rectangle",
+            id: `${arrowId}:chip`,
+            x: chipX,
+            y: (self ? y + 8 : ay) - CHIP_H / 2,
+            width: chipW,
+            height: CHIP_H,
+            strokeColor: "transparent",
+            backgroundColor: palette.bg,
+            fillStyle: "solid",
+            strokeWidth: 1,
+            roughness: 0,
+            roundness: { type: ROUNDNESS.ADAPTIVE_RADIUS, value: CHIP_H / 2 },
+            label: {
+              text: info.tag,
+              fontSize: CHIP_FONT,
+              fontFamily: FONT_FAMILY.Cascadia,
+              strokeColor: palette.fg,
+            },
+            customData: {
+              flowapi: {
+                kind: FLOW_CHIP_KIND,
+                flowId: flow.id,
+                line: item.line,
+                specId: info.specId,
+                key: info.key,
+                broken: info.broken,
+              },
+            },
+          });
+        }
         y += rowH;
       } else if (item.kind === "note") {
         const text = brSplit(item.text).join("\n");

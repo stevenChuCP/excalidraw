@@ -1,5 +1,7 @@
 import { flushSync } from "react-dom";
 
+// flowapi: pinned elements are not edited on the canvas
+import { isPinnedElement } from "@flowapi/card";
 import {
   DEFAULT_VERTICAL_ALIGN,
   TEXT_MAX_WRAP_WIDTH,
@@ -925,6 +927,10 @@ export class AppText {
      */
     textElement?: NonDeleted<ExcalidrawTextElement> | null;
   }) => {
+    // flowapi: elements drawn from text are edited in the text, not here
+    if (isPinnedElement(container)) {
+      return;
+    }
     let shouldBindToContainer = false;
 
     // Resolved here rather than by the caller so that the stroke width the
@@ -977,6 +983,18 @@ export class AppText {
             )
           : null) ||
         this.getTextElementAtPosition(sceneX, sceneY);
+
+    // flowapi: nor are their labels
+    if (
+      existingTextElement &&
+      (isPinnedElement(existingTextElement) ||
+        (existingTextElement.containerId &&
+          isPinnedElement(
+            this.app.scene.getElement(existingTextElement.containerId),
+          )))
+    ) {
+      return;
+    }
 
     const fontFamily =
       existingTextElement?.fontFamily || this.app.state.currentItemFontFamily;

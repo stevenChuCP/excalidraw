@@ -62,6 +62,16 @@ export type Operation = {
   line: number;
   /** what the gap checks found, empty when the operation is complete */
   gaps: string[];
+  /** parameters, request body and responses, for the expanded card */
+  details?: OperationDetails;
+};
+
+export type DetailField = { name: string; type: string; required?: boolean };
+
+export type OperationDetails = {
+  params: (DetailField & { in: string })[];
+  body: { type: string; fields: DetailField[] } | null;
+  responses: { code: string; description: string; fields: DetailField[] }[];
 };
 
 export type SpecModel = {

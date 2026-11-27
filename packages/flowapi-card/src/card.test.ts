@@ -1,7 +1,9 @@
 import { exportScene } from "@excalidraw/excalidraw/scene/export";
 
 import { createApiCardElement } from "./create";
+import { isPinnedElement } from "./pinned";
 import {
+  apiCardHeight,
   getApiCardData,
   isApiCardElement,
   layoutApiCard,
@@ -88,5 +90,51 @@ describe("API card", () => {
     );
     expect(texts).toContain("createSignRequest");
     expect(texts).toContain("/v1/sign-requests");
+  });
+
+  it("M6: an expanded card is taller and lists its details", () => {
+    const data: ApiCardData = {
+      kind: "apiCard",
+      specId: "s",
+      key: "A2",
+      method: "POST",
+      path: "/x",
+      expanded: true,
+      details: {
+        params: [],
+        body: { type: "object", fields: [{ name: "id", type: "string" }] },
+        responses: [{ code: "200", description: "OK", fields: [] }],
+      },
+    };
+    const h = apiCardHeight(data);
+    expect(h).toBeGreaterThan(API_CARD_DEFAULT_SIZE.height);
+    expect(apiCardHeight({ ...data, expanded: false })).toBe(
+      API_CARD_DEFAULT_SIZE.height,
+    );
+    const el = {
+      width: 300,
+      height: h,
+      opacity: 100,
+      customData: { flowapi: data },
+    };
+    const texts = layoutApiCard(el, data).flatMap((p) =>
+      p.type === "text" ? [p.text] : [],
+    );
+    expect(texts).toEqual(expect.arrayContaining(["id", "200", "OK"]));
+  });
+
+  it("M6: cards and flow parts are pinned, frames and sketches are not", () => {
+    const card = createApiCardElement(
+      { specId: "s", key: "A1", method: "GET", path: "/" },
+      { x: 0, y: 0 },
+    );
+    expect(isPinnedElement(card)).toBe(true);
+    expect(isPinnedElement({ type: "rectangle" })).toBe(false);
+    expect(
+      isPinnedElement({
+        type: "frame",
+        customData: { flowapi: { kind: "x" } },
+      }),
+    ).toBe(false);
   });
 });

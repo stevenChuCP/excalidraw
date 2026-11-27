@@ -18,6 +18,8 @@ import {
   isCurve,
 } from "@excalidraw/math";
 
+// flowapi: pinned arrows keep their points
+import { isPinnedElement } from "@flowapi/card";
 import { getCurvePathOps } from "@excalidraw/utils/shape";
 
 import {
@@ -321,6 +323,11 @@ export class LinearElementEditor {
     const element = LinearElementEditor.getElement(elementId, elementsMap);
 
     invariant(element, "Element being dragged must exist in the scene");
+
+    // flowapi: arrows drawn from a flow's text keep their points
+    if (isPinnedElement(element)) {
+      return null;
+    }
     invariant(element.points.length > 1, "Element must have at least 2 points");
 
     const idx = element.points.length - 1;

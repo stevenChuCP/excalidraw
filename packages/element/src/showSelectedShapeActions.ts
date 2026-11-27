@@ -1,3 +1,6 @@
+// flowapi: elements drawn from text are pinned
+import { isPinnedElement } from "@flowapi/card";
+
 import type { UIAppState } from "@excalidraw/excalidraw/types";
 
 import { getSelectedElements } from "./selection";
@@ -18,5 +21,8 @@ export const showSelectedShapeActions = (
             appState.activeTool.type !== "eraser" &&
             appState.activeTool.type !== "hand" &&
             appState.activeTool.type !== "laser"))) ||
-        getSelectedElements(elements, appState).length),
+        // flowapi: no style panel for elements drawn from text
+        getSelectedElements(elements, appState).filter(
+          (el) => !isPinnedElement(el),
+        ).length),
   );

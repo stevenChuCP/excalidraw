@@ -4,6 +4,7 @@ import { getCommonBounds } from "@excalidraw/element";
 import type { ExcalidrawElement } from "@excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 
+import { FLOW_CHIP_KIND, cardId } from "./layout";
 import { S } from "./strings";
 
 import type { Project } from "@flowapi/core";
@@ -48,7 +49,20 @@ export const buildStandaloneHtml = async ({
   appState: AppState;
   files: BinaryFiles;
 }) => {
-  const live = elements.filter((e) => !e.isDeleted);
+  // key chips link to their cards in the page
+  const live = elements
+    .filter((e) => !e.isDeleted)
+    .map((e) => {
+      const d = e.customData?.flowapi;
+      return d?.kind === FLOW_CHIP_KIND && d.specId && d.key
+        ? {
+            ...e,
+            link: `http://x/?element=${encodeURIComponent(
+              cardId(d.specId, d.key),
+            )}`,
+          }
+        : e;
+    });
   if (!live.length) {
     throw new Error(S.htmlEmpty);
   }
