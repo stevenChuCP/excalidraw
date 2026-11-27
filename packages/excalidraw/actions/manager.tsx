@@ -1,6 +1,8 @@
 import React from "react";
 
 import { isPromiseLike } from "@excalidraw/common";
+// flowapi: actions leave protected elements alone
+import { guardActionElements, isProtectedElement } from "@flowapi/card";
 
 import type {
   ExcalidrawElement,
@@ -144,7 +146,11 @@ export class ActionManager {
 
     event.preventDefault();
     event.stopPropagation();
-    this.updater(data[0].perform(elements, appState, value, this.app));
+    this.updater(
+      this.guarded(data[0], () =>
+        data[0].perform(elements, appState, value, this.app),
+      ),
+    );
     return true;
   }
 
@@ -173,7 +179,50 @@ export class ActionManager {
 
     trackAction(action, source, appState, elements, this.app, value);
 
-    this.updater(action.perform(elements, appState, value, this.app));
+    this.updater(
+      this.guarded(action, () =>
+        action.perform(elements, appState, value, this.app),
+      ),
+    );
+  }
+
+  /**
+   * flowapi: runs an action so that it leaves what the app draws from text
+   * (flow shapes, labels, cards, their frames) as it was. Actions may change
+   * elements in place, so protected ones are copied first.
+   */
+  private guarded(
+    action: Action,
+    perform: () => ActionResult | Promise<ActionResult>,
+  ): ActionResult | Promise<ActionResult> {
+    if (action.name === "undo" || action.name === "redo") {
+      return perform();
+    }
+    const all = this.getElementsIncludingDeleted();
+    const byId = new Map(all.map((e) => [e.id, e]));
+    const lookup = (id: string) => byId.get(id);
+    const before = new Map(
+      all.map((e) => [
+        e.id,
+        isProtectedElement(e, lookup) ? ({ ...e } as typeof e) : e,
+      ]),
+    );
+    const fix = (result: ActionResult): ActionResult => {
+      if (result && result.elements) {
+        return {
+          ...result,
+          elements: guardActionElements(result.elements, before),
+        };
+      }
+      const now = this.getElementsIncludingDeleted();
+      const fixed = guardActionElements(now, before);
+      if (fixed.some((e, i) => e !== now[i]) || fixed.length !== now.length) {
+        this.app.scene.replaceAllElements(fixed);
+      }
+      return result;
+    };
+    const result = perform();
+    return isPromiseLike(result) ? result.then(fix) : fix(result);
   }
 
   /**
@@ -209,11 +258,13 @@ export class ActionManager {
         );
 
         this.updater(
-          action.perform(
-            this.getElementsIncludingDeleted(),
-            this.getAppState(),
-            formState,
-            this.app,
+          this.guarded(action, () =>
+            action.perform(
+              this.getElementsIncludingDeleted(),
+              this.getAppState(),
+              formState,
+              this.app,
+            ),
           ),
         );
       };

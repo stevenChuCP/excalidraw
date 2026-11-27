@@ -4,7 +4,7 @@ import {
 } from "@excalidraw/common";
 
 // flowapi: pinned elements have no handles
-import { isPinnedElement } from "@flowapi/card";
+import { isFlowapiFrame, isPinnedElement } from "@flowapi/card";
 import { pointFrom, pointRotateRads } from "@excalidraw/math";
 
 import type { Radians } from "@excalidraw/math";
@@ -285,6 +285,7 @@ export const getTransformHandles = (
     element.locked ||
     // flowapi: elements drawn from text can't be resized or rotated
     isPinnedElement(element) ||
+    isFlowapiFrame(element) ||
     // Elbow arrows cannot be rotated
     isElbowArrow(element)
   ) {

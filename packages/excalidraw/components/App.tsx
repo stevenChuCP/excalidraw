@@ -1,6 +1,11 @@
 import clsx from "clsx";
 // flowapi: elements drawn from text are pinned
-import { isPinnedElement, keepMovable } from "@flowapi/card";
+import {
+  isDeletablePinned,
+  isPinnedElement,
+  isProtectedElement,
+  keepMovable,
+} from "@flowapi/card";
 import throttle from "lodash.throttle";
 import React, { useContext } from "react";
 import { flushSync } from "react-dom";
@@ -3157,6 +3162,7 @@ class App extends React.Component<AppProps, AppState> {
 
     let editingTextElement: AppState["editingTextElement"] | null = null;
     if (actionResult.elements) {
+      // (flowapi: actions are guarded in ActionManager, see `guarded()`)
       this.scene.replaceAllElements(actionResult.elements);
       didUpdate = true;
     }
@@ -7416,7 +7422,19 @@ class App extends React.Component<AppProps, AppState> {
     );
 
     this.elementsPendingErasure = new Set(elementsToErase);
+    this.dropProtectedFromErasure();
     this.triggerRender();
+  };
+
+  // flowapi: cards may be erased (hidden), other app elements not
+  private dropProtectedFromErasure = () => {
+    const lookup = (id: string) => this.scene.getElement(id);
+    for (const id of [...this.elementsPendingErasure]) {
+      const el = lookup(id);
+      if (isProtectedElement(el, lookup) && !isDeletablePinned(el)) {
+        this.elementsPendingErasure.delete(id);
+      }
+    }
   };
 
   // set touch moving for mobile context menu
@@ -10342,6 +10360,9 @@ class App extends React.Component<AppProps, AppState> {
 
   private eraseElements = () => {
     let didChange = false;
+
+    // flowapi: the eraser leaves what the app draws from text alone
+    this.dropProtectedFromErasure();
 
     // Binding is double accounted on both elements and if one of them is
     // deleted, the binding should be removed
