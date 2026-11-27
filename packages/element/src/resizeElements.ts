@@ -8,7 +8,7 @@ import {
 } from "@excalidraw/math";
 
 // flowapi: pinned elements are not resized
-import { isPinnedElement } from "@flowapi/card";
+import { isFlowapiFrame, isPinnedElement } from "@flowapi/card";
 import {
   MIN_FONT_SIZE,
   SHIFT_LOCKING_ANGLE,
@@ -111,7 +111,9 @@ export const transformElements = (
   renderEnvironment?: RenderEnvironment,
 ): boolean => {
   // flowapi: elements drawn from text keep their size and angle
-  if (selectedElements.some((el) => isPinnedElement(el))) {
+  if (
+    selectedElements.some((el) => isPinnedElement(el) || isFlowapiFrame(el))
+  ) {
     return false;
   }
   const elementsMap = scene.getNonDeletedElementsMap();

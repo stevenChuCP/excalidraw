@@ -11,7 +11,7 @@ import {
 } from "@excalidraw/math";
 
 // flowapi: pinned elements have no handles
-import { isPinnedElement } from "@flowapi/card";
+import { isFlowapiFrame, isPinnedElement } from "@flowapi/card";
 import {
   arrayToMap,
   BIND_MODE_TIMEOUT,
@@ -2027,7 +2027,9 @@ const _renderInteractiveScene = ({
       selectedElements.length > 1 &&
       !appState.isRotating &&
       // flowapi: no group handles over pinned elements
-      !selectedElements.some((el) => el.locked || isPinnedElement(el))
+      !selectedElements.some(
+        (el) => el.locked || isPinnedElement(el) || isFlowapiFrame(el),
+      )
     ) {
       const dashedLinePadding =
         (DEFAULT_TRANSFORM_HANDLE_SPACING * 2) / appState.zoom.value;

@@ -1,5 +1,7 @@
 import { flushSync } from "react-dom";
 
+// flowapi: no copies of protected elements
+import { guardActionElements } from "@flowapi/card";
 import {
   arrayToMap,
   distance,
@@ -74,6 +76,9 @@ export class AppDuplicate {
     /** excludes the duplicated elements */
     prevElements: readonly ExcalidrawElement[],
   ) => {
+    // flowapi: no loose copies of what the app draws from text
+    const prevMap = new Map(prevElements.map((e) => [e.id, e]));
+    nextElements = guardActionElements(nextElements, prevMap);
     return reconcileDuplicatedElements(
       this.app.props.onDuplicate?.(nextElements, prevElements, {
         duplicateElements: duplication.duplicateElementsMap,
@@ -338,6 +343,15 @@ export class AppDuplicate {
         eligibleElements,
         topLayerFrame,
       );
+    }
+
+    // flowapi: pasted copies of what the app draws from text are dropped
+    nextElements = guardActionElements(nextElements, arrayToMap(prevElements));
+    duplicatedElements = duplicatedElements.filter((d) =>
+      nextElements.includes(d),
+    );
+    if (!duplicatedElements.length) {
+      return null;
     }
 
     if (this.app.props.onDuplicate) {
