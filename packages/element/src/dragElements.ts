@@ -6,6 +6,8 @@ import {
   DRAGGING_THRESHOLD,
 } from "@excalidraw/common";
 
+import { keepMovable } from "@flowapi/card";
+
 import type {
   AppState,
   NormalizedZoomValue,
@@ -34,6 +36,8 @@ import {
   isTextElement,
 } from "./typeChecks";
 
+// flowapi: elements drawn from text move only with their frame
+
 import type { RenderEnvironment } from "./renderEnvironment";
 import type { Scene } from "./Scene";
 
@@ -60,7 +64,14 @@ export const dragSelectedElements = (
     return;
   }
 
-  const selectedElements = _selectedElements.filter((element) => {
+  // flowapi: pinned elements stay put unless their frame is dragged
+  const draggedFrameIds = new Set(
+    _selectedElements.filter((e) => isFrameLikeElement(e)).map((e) => e.id),
+  );
+  const selectedElements = keepMovable(
+    _selectedElements,
+    draggedFrameIds,
+  ).filter((element) => {
     if (isElbowArrow(element) && element.startBinding && element.endBinding) {
       const startElement = _selectedElements.find(
         (el) => el.id === element.startBinding?.elementId,

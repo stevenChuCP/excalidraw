@@ -85,6 +85,27 @@ describe("spec parsing", () => {
   });
 });
 
+describe("operation details (M6 expanded card)", () => {
+  it("lists parameters, request body fields and responses", () => {
+    const { model } = parseSpec(
+      "s-kx",
+      "kx-sign-openapi.yaml",
+      read("kx-sign-openapi.yaml"),
+    );
+    const a2 = model.ops.find((o) => o.key === "A2")!;
+    expect(a2.details?.body?.fields.map((f) => f.name)).toEqual([
+      "request_id",
+      "access_secret",
+    ]);
+    expect(a2.details?.responses.map((r) => r.code)).toEqual(["200", "4XX"]);
+    const a3 = model.ops.find((o) => o.key === "A3")!;
+    expect(a3.details?.params.map((p) => [p.name, p.in])).toContainEqual([
+      "id",
+      "path",
+    ]);
+  });
+});
+
 describe("flow parsing", () => {
   it("reads participants, @oai-doc and @api lines", () => {
     const flow = parseFlow(

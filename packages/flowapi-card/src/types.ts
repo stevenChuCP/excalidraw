@@ -22,6 +22,18 @@ export type ApiCardData = {
   summary?: string;
   /** true when the gap checks found the operation incomplete */
   gap?: boolean;
+  /** shows parameters, request body and responses */
+  expanded?: boolean;
+  details?: ApiCardDetails;
+};
+
+export type ApiCardField = { name: string; type: string; required?: boolean };
+
+/** what an expanded card lists, read from the spec */
+export type ApiCardDetails = {
+  params: (ApiCardField & { in: string })[];
+  body: { type: string; fields: ApiCardField[] } | null;
+  responses: { code: string; description: string; fields: ApiCardField[] }[];
 };
 
 /** The parts of an Excalidraw element the card code reads. */

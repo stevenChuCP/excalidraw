@@ -4,7 +4,7 @@ import path from "path";
 import { convertToExcalidrawElements } from "@excalidraw/element";
 import { buildProjectModel } from "@flowapi/core";
 
-import { cardId, flowFrameId, layoutFlow } from "./layout";
+import { FLOW_CHIP_KIND, cardId, flowFrameId, layoutFlow } from "./layout";
 
 const FX = path.resolve(__dirname, "../../flowapi-core/fixtures");
 const file = (name: string, id: string) => ({
@@ -44,9 +44,15 @@ describe("layoutFlow", () => {
         (e) => e.type === "arrow" && e.customData?.flowapi?.line === m.line,
       );
       expect(arrow?.type).toBe("arrow");
-      expect(arrow?.link).toBe(
-        `https://app/?element=${cardId("s-kx", m.ref!.key)}`,
+      // M6: no element link on the arrow; a key chip names the card
+      expect(arrow?.link ?? null).toBe(null);
+      const chip = elements.find(
+        (e) =>
+          e.customData?.flowapi?.kind === FLOW_CHIP_KIND &&
+          e.customData.flowapi.line === m.line,
       );
+      const d = chip?.customData?.flowapi;
+      expect(cardId(d?.specId, d?.key)).toBe(cardId("s-kx", m.ref!.key));
     }
   });
 });

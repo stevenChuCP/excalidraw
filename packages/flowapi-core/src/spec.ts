@@ -1,6 +1,13 @@
 import { LineCounter, parseDocument, isNode } from "yaml";
 
-import type { HttpMethod, Issue, Operation, SpecModel } from "./types";
+import type {
+  DetailField,
+  HttpMethod,
+  Issue,
+  Operation,
+  OperationDetails,
+  SpecModel,
+} from "./types";
 
 const METHODS = [
   "get",
@@ -192,6 +199,101 @@ const findGaps = (
   return { gaps, staleMarkers };
 };
 
+const MAX_FIELDS = 12;
+
+/** a short type name: string, int64, Address, Item[] */
+const typeName = (schema: Json, deref: (o: Json) => Json): string => {
+  if (!schema || typeof schema !== "object") {
+    return "";
+  }
+  if (typeof schema.$ref === "string") {
+    return schema.$ref.split("/").pop() || "";
+  }
+  const s = deref(schema);
+  if (!s || typeof s !== "object") {
+    return "";
+  }
+  if (s.type === "array") {
+    return `${typeName(s.items, deref) || "any"}[]`;
+  }
+  for (const k of ["oneOf", "anyOf"]) {
+    if (Array.isArray(s[k]) && s[k].length) {
+      return s[k].map((x: Json) => typeName(x, deref)).join(" | ");
+    }
+  }
+  if (s.format && (s.type === "integer" || s.type === "number")) {
+    return String(s.format);
+  }
+  return String(s.type || (s.properties ? "object" : ""));
+};
+
+/** the top-level fields of a schema (allOf merged, array items opened) */
+const fieldsOf = (schema: Json, deref: (o: Json) => Json): DetailField[] => {
+  let s = deref(schema);
+  if (s?.type === "array") {
+    s = deref(s.items);
+  }
+  if (!s || typeof s !== "object") {
+    return [];
+  }
+  const props: Record<string, Json> = {};
+  const required = new Set<string>();
+  const merge = (x: Json) => {
+    const d = deref(x);
+    if (!d || typeof d !== "object") {
+      return;
+    }
+    (d.allOf || []).forEach(merge);
+    Object.assign(props, d.properties || {});
+    (Array.isArray(d.required) ? d.required : []).forEach((r: string) =>
+      required.add(r),
+    );
+  };
+  merge(s);
+  return Object.keys(props)
+    .slice(0, MAX_FIELDS)
+    .map((name) => ({
+      name,
+      type: typeName(props[name], deref),
+      ...(required.has(name) ? { required: true } : {}),
+    }));
+};
+
+const opDetails = (
+  op: Json,
+  params: Json[],
+  deref: (o: Json) => Json,
+): OperationDetails => {
+  const body = op.requestBody ? deref(op.requestBody) : null;
+  const bodyMedia = body ? pickJsonContent(body.content) : undefined;
+  const responses = op.responses ? deref(op.responses) || {} : {};
+  return {
+    params: params
+      .filter((p) => p && p.name && p.in)
+      .map((p) => ({
+        name: String(p.name),
+        in: String(p.in),
+        type: typeName(p.schema, deref),
+        ...(p.required ? { required: true } : {}),
+      })),
+    body: bodyMedia
+      ? {
+          type: typeName(bodyMedia.schema, deref),
+          fields: fieldsOf(bodyMedia.schema, deref),
+        }
+      : null,
+    responses: Object.keys(responses).map((code) => {
+      const res = deref(responses[code]) || {};
+      const media = pickJsonContent(res.content);
+      return {
+        code,
+        description: res.description ? String(res.description) : "",
+        fields: media ? fieldsOf(media.schema, deref) : [],
+      };
+    }),
+  };
+};
+
 const titleFromName = (name: string) => name.replace(/\.(ya?ml|json)$/i, "");
 
 export const parseSpec = (
@@ -286,6 +388,7 @@ export const parseSpec = (
           webhook,
           line,
           gaps,
+          details: opDetails(op, params, deref),
         };
         model.ops.push(operation);
         for (const where of staleMarkers) {

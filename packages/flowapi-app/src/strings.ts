@@ -102,6 +102,17 @@ export const S = {
   editorApplied: "Canvas updated",
   closeTab: "Close",
   linkChip: "+ link",
+  cardExpand: "Show details",
+  cardCollapse: "Hide details",
+  cardUsedBy: (n: number) =>
+    n === 0
+      ? "No arrow uses this operation"
+      : n === 1
+      ? "Used by 1 arrow:"
+      : `Used by ${n} arrows:`,
+  lineN: (n: number) => `line ${n}`,
+  chipNoCard: (key: string) =>
+    `${key} has no card on the board. Drag it in from the sidebar.`,
   linkTitle: (label: string) => `Link “${label}” to an operation`,
   linkSearch: "Search operations",
   linkNone: "No operation matches.",

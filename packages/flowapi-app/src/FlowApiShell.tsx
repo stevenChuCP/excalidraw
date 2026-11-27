@@ -26,6 +26,8 @@ import {
 } from "@flowapi/core";
 import { fileOpen } from "browser-fs-access";
 
+import { API_CARD_KIND, isOnApiCardToggle } from "@flowapi/card";
+
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 
 import type { BinaryFileData } from "@excalidraw/excalidraw/types";
@@ -35,8 +37,10 @@ import {
   flowsOnBoard as getFlowsOnBoard,
   placeFlow,
   placeCardInSpecFrame,
+  focusCard,
   placeOperation,
   rekeyCard,
+  toggleCard,
   removeCard,
   syncBoard,
 } from "./board";
@@ -50,8 +54,9 @@ import {
   serializeProject,
 } from "./projectFile";
 import { ChecksPanel } from "./ChecksPanel";
-import { FLOW_ARROW_KIND } from "./layout";
+import { FLOW_ARROW_KIND, FLOW_CHIP_KIND, cardId } from "./layout";
 import { LinkPanel } from "./LinkPanel";
+import { CardPanel } from "./CardPanel";
 import { SidePanel } from "./SidePanel";
 import { TextEditor } from "./TextEditor";
 import { KeyPatternDialog } from "./KeyPatternDialog";
@@ -136,6 +141,12 @@ export const FlowApiShell = ({
   const [keySpecId, setKeySpecId] = useState<string | null>(null);
   const [pendingOpen, setPendingOpen] = useState<ProjectFile | null>(null);
   const [selArrow, setSelArrow] = useState<SelectedArrow | null>(null);
+  const [selCard, setSelCard] = useState<{
+    id: string;
+    specId: string;
+    key: string;
+    expanded: boolean;
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Operation | null>(null);
   const [board, setBoard] = useState({
     cards: new Set<string>(),
@@ -162,6 +173,7 @@ export const FlowApiShell = ({
     }
     let sig = "";
     let selSig = "";
+    let selCardSig = "";
     const trackSelection = (
       elements: readonly any[],
       selected: Record<string, true>,
@@ -176,6 +188,22 @@ export const FlowApiShell = ({
         selSig = next;
         setSelArrow(
           next ? { flowId: data.flowId, line: data.line as number } : null,
+        );
+      }
+      const card = el?.customData?.flowapi;
+      const cardSig =
+        card?.kind === API_CARD_KIND ? `${el.id}|${card.expanded ? 1 : 0}` : "";
+      if (cardSig !== selCardSig) {
+        selCardSig = cardSig;
+        setSelCard(
+          cardSig
+            ? {
+                id: el.id,
+                specId: card.specId,
+                key: card.key,
+                expanded: !!card.expanded,
+              }
+            : null,
         );
       }
     };
@@ -201,6 +229,80 @@ export const FlowApiShell = ({
       syncBoard(excalidrawAPI, model);
     }
   }, [excalidrawAPI, model]);
+
+  // a click on a key chip jumps to its card; a click on a card's arrow (or a
+  // double-click on the card) expands it
+  const lastToggle = useRef(0);
+  useEffect(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    return excalidrawAPI.onPointerUp((activeTool, state) => {
+      const el = state.hit.element;
+      const data = el?.customData?.flowapi;
+      if (
+        !el ||
+        !data ||
+        state.drag.hasOccurred ||
+        activeTool.type !== "selection"
+      ) {
+        return;
+      }
+      if (data.kind === FLOW_CHIP_KIND && data.specId && data.key) {
+        const id = cardId(data.specId, data.key);
+        if (excalidrawAPI.getSceneElements().some((e) => e.id === id)) {
+          setTimeout(() => focusCard(excalidrawAPI, id));
+        } else {
+          toast(S.chipNoCard(data.key));
+        }
+      } else if (
+        data.kind === API_CARD_KIND &&
+        isOnApiCardToggle(el, state.origin.x - el.x, state.origin.y - el.y)
+      ) {
+        lastToggle.current = Date.now();
+        toggleCard(excalidrawAPI, el.id, modelRef.current);
+      }
+    });
+  }, [excalidrawAPI, toast]);
+
+  const onCanvasDoubleClick = () => {
+    if (!excalidrawAPI || Date.now() - lastToggle.current < 600) {
+      return;
+    }
+    const ids = Object.keys(excalidrawAPI.getAppState().selectedElementIds);
+    const el =
+      ids.length === 1
+        ? excalidrawAPI.getSceneElements().find((e) => e.id === ids[0])
+        : null;
+    if (el?.customData?.flowapi?.kind === API_CARD_KIND) {
+      toggleCard(excalidrawAPI, el.id, model);
+    }
+  };
+
+  const selectArrow = (flowId: string, line: number) => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const el = excalidrawAPI
+      .getSceneElements()
+      .find(
+        (e) =>
+          e.customData?.flowapi?.kind === FLOW_ARROW_KIND &&
+          e.customData.flowapi.flowId === flowId &&
+          e.customData.flowapi.line === line,
+      );
+    if (el) {
+      excalidrawAPI.updateScene({
+        appState: { selectedElementIds: { [el.id]: true } },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+      excalidrawAPI.setViewport({
+        target: el.id,
+        fit: "scale-down",
+        animation: true,
+      });
+    }
+  };
 
   const applyProjectFile = useCallback(
     (file: ProjectFile) => {
@@ -539,7 +641,12 @@ export const FlowApiShell = ({
           .find((s) => s.id === payload.specId)
           ?.ops.find((o) => o.key === payload.key);
         if (op) {
-          placeOperation(excalidrawAPI, op, { x: p.x - 150, y: p.y - 52 });
+          placeOperation(
+            excalidrawAPI,
+            op,
+            { x: p.x - 24, y: p.y - 24 },
+            model.specs.find((s) => s.id === op.specId)?.name,
+          );
         }
       } else {
         const flow = m.flows.find((f) => f.id === payload.flowId);
@@ -617,8 +724,22 @@ export const FlowApiShell = ({
         className="flowapi-shell__canvas"
         onDragOverCapture={onDragOver}
         onDropCapture={onDrop}
+        onDoubleClick={onCanvasDoubleClick}
       >
         {children}
+        {selCard && (
+          <CardPanel
+            key={selCard.id}
+            model={model}
+            specId={selCard.specId}
+            opKey={selCard.key}
+            expanded={selCard.expanded}
+            onToggle={() =>
+              excalidrawAPI && toggleCard(excalidrawAPI, selCard.id, model)
+            }
+            onArrow={selectArrow}
+          />
+        )}
         {selArrow && (
           <LinkPanel
             key={`${selArrow.flowId}|${selArrow.line}`}

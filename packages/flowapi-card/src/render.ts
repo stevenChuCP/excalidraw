@@ -1,6 +1,8 @@
 import {
   API_CARD_KIND,
   type ApiCardData,
+  type ApiCardDetails,
+  type ApiCardField,
   type ApiCardLikeElement,
 } from "./types";
 
@@ -33,6 +35,11 @@ const FONTS = {
   path: `400 12px ${MONO_FONT}`,
   summary: `400 13px ${UI_FONT}`,
   badge: `600 11px ${UI_FONT}`,
+  section: `700 11px ${UI_FONT}`,
+  field: `400 12px ${MONO_FONT}`,
+  fieldType: `400 11px ${MONO_FONT}`,
+  code: `600 12px ${MONO_FONT}`,
+  note: `400 12px ${UI_FONT}`,
 };
 
 type Palette = { bg: string; fg: string };
@@ -46,9 +53,26 @@ const METHOD_COLORS: Record<string, Palette> = {
 };
 const DEFAULT_METHOD_COLOR: Palette = { bg: "#E2E4E9", fg: "#1B1D21" };
 
+/** pill colors for an HTTP method (shared with the key chips on arrows) */
+export const methodPalette = (method: string | null | undefined): Palette =>
+  METHOD_COLORS[(method || "").toUpperCase()] ?? DEFAULT_METHOD_COLOR;
+
 const TEXT = { main: "#1B1D21", muted: "#5E6470" };
 const GAP_BADGE: Palette = { bg: "#FDF0C4", fg: "#6B4E00" };
 const GAP_LABEL = "not defined yet";
+const SECTION_LABELS = {
+  params: "Parameters",
+  body: "Request body",
+  responses: "Responses",
+  none: "none",
+};
+const DIVIDER = "#E6E8EC";
+const REQUIRED_MARK = "*";
+
+// expanded part
+const ROW_H = 18;
+const SECTION_GAP = 10;
+const TOGGLE = 20; // the expand arrow's square, top right
 
 export type ApiCardRenderOptions = {
   /** swaps colors for dark mode (the caller's color filter) */
@@ -110,6 +134,12 @@ const fitText = (text: string, font: string, maxWidth: number): string => {
 // -----------------------------------------------------------------------------
 
 type Primitive =
+  | {
+      type: "path";
+      d: string;
+      stroke: string;
+      width: number;
+    }
   | {
       type: "rect";
       x: number;
@@ -175,11 +205,23 @@ export const layoutApiCard = (
   });
   x += pillW + 8;
 
+  // expand arrow in the top right corner
+  const tx = right - TOGGLE + 6;
+  const ty = ROW1_Y + PILL_H / 2;
+  out.push({
+    type: "path",
+    d: data.expanded
+      ? `M${tx} ${ty + 3}L${tx + 4} ${ty - 2}L${tx + 8} ${ty + 3}`
+      : `M${tx} ${ty - 2}L${tx + 4} ${ty + 3}L${tx + 8} ${ty - 2}`,
+    stroke: color(TEXT.muted),
+    width: 1.6,
+  });
+
   // gap badge sits at the right end of the header row
-  let headerRight = right;
+  let headerRight = right - TOGGLE - 4;
   if (data.gap) {
     const badgeW = measureText(GAP_LABEL, FONTS.badge) + 14;
-    const badgeX = right - badgeW;
+    const badgeX = headerRight - badgeW;
     out.push({
       type: "rect",
       x: badgeX,
@@ -236,7 +278,180 @@ export const layoutApiCard = (
     });
   }
 
+  if (data.expanded) {
+    layoutDetails(out, data, element.width, color);
+  }
+
   return out.filter((p) => p.type !== "text" || p.text);
+};
+
+/** the rows of the expanded part, as [kind, ...cells] */
+type DetailRow =
+  | { kind: "section"; text: string }
+  | { kind: "field"; name: string; type: string; indent: number }
+  | { kind: "code"; code: string; text: string }
+  | { kind: "note"; text: string };
+
+const detailRows = (details: ApiCardDetails | undefined): DetailRow[] => {
+  const rows: DetailRow[] = [];
+  const d = details || { params: [], body: null, responses: [] };
+  const field = (f: ApiCardField, indent = 0, prefix = ""): DetailRow => ({
+    kind: "field",
+    name: `${prefix}${f.name}${f.required ? REQUIRED_MARK : ""}`,
+    type: f.type,
+    indent,
+  });
+  rows.push({ kind: "section", text: SECTION_LABELS.params });
+  if (!d.params.length) {
+    rows.push({ kind: "note", text: SECTION_LABELS.none });
+  }
+  d.params.forEach((p) =>
+    rows.push({
+      ...(field(p) as Extract<DetailRow, { kind: "field" }>),
+      type: `${p.in} · ${p.type}`,
+    }),
+  );
+  rows.push({
+    kind: "section",
+    text: d.body?.type
+      ? `${SECTION_LABELS.body} · ${d.body.type}`
+      : SECTION_LABELS.body,
+  });
+  if (!d.body || !d.body.fields.length) {
+    rows.push({ kind: "note", text: SECTION_LABELS.none });
+  }
+  d.body?.fields.forEach((f) => rows.push(field(f)));
+  rows.push({ kind: "section", text: SECTION_LABELS.responses });
+  if (!d.responses.length) {
+    rows.push({ kind: "note", text: SECTION_LABELS.none });
+  }
+  d.responses.forEach((r) => {
+    rows.push({ kind: "code", code: r.code, text: r.description });
+    r.fields.forEach((f) => rows.push(field(f, 1)));
+  });
+  return rows;
+};
+
+/** height of a card with this data */
+export const apiCardHeight = (data: ApiCardData | null | undefined) => {
+  if (!data?.expanded) {
+    return API_CARD_DEFAULT_SIZE.height;
+  }
+  const rows = detailRows(data.details);
+  const sections = rows.filter((r) => r.kind === "section").length;
+  return (
+    API_CARD_DEFAULT_SIZE.height + rows.length * ROW_H + sections * SECTION_GAP
+  );
+};
+
+/** true when a point (card-local px) is on the expand arrow */
+export const isOnApiCardToggle = (
+  element: { width: number },
+  x: number,
+  y: number,
+) =>
+  x >= element.width - PAD - TOGGLE - 6 &&
+  x <= element.width &&
+  y >= 0 &&
+  y <= ROW1_Y + PILL_H + 8;
+
+const layoutDetails = (
+  out: Primitive[],
+  data: ApiCardData,
+  width: number,
+  color: (c: string) => string,
+) => {
+  const right = width - PAD;
+  let y = API_CARD_DEFAULT_SIZE.height - 8;
+  out.push({
+    type: "rect",
+    x: PAD,
+    y,
+    width: width - PAD * 2,
+    height: 1,
+    radius: 0,
+    fill: color(DIVIDER),
+  });
+  for (const row of detailRows(data.details)) {
+    if (row.kind === "section") {
+      y += SECTION_GAP;
+    }
+    y += ROW_H;
+    const base = y - 5;
+    if (row.kind === "section") {
+      out.push({
+        type: "text",
+        x: PAD,
+        y: base,
+        text: fitText(row.text, FONTS.section, right - PAD),
+        font: FONTS.section,
+        fill: color(TEXT.muted),
+      });
+    } else if (row.kind === "note") {
+      out.push({
+        type: "text",
+        x: PAD + 8,
+        y: base,
+        text: row.text,
+        font: FONTS.note,
+        fill: color(TEXT.muted),
+      });
+    } else if (row.kind === "code") {
+      const palette = /^2/.test(row.code)
+        ? METHOD_COLORS.POST
+        : /^[45]/.test(row.code)
+        ? METHOD_COLORS.DELETE
+        : DEFAULT_METHOD_COLOR;
+      const w = measureText(row.code, FONTS.code) + 10;
+      out.push({
+        type: "rect",
+        x: PAD + 8,
+        y: base - 12,
+        width: w,
+        height: 16,
+        radius: 4,
+        fill: color(palette.bg),
+      });
+      out.push({
+        type: "text",
+        x: PAD + 13,
+        y: base,
+        text: row.code,
+        font: FONTS.code,
+        fill: color(palette.fg),
+      });
+      out.push({
+        type: "text",
+        x: PAD + 16 + w,
+        y: base,
+        text: fitText(row.text, FONTS.note, right - (PAD + 16 + w)),
+        font: FONTS.note,
+        fill: color(TEXT.main),
+      });
+    } else {
+      const x0 = PAD + 8 + row.indent * 16;
+      const typeW = Math.min(
+        measureText(row.type, FONTS.fieldType),
+        (right - x0) / 2,
+      );
+      out.push({
+        type: "text",
+        x: x0,
+        y: base,
+        text: fitText(row.name, FONTS.field, right - x0 - typeW - 10),
+        font: FONTS.field,
+        fill: color(TEXT.main),
+      });
+      out.push({
+        type: "text",
+        x: right - typeW,
+        y: base,
+        text: fitText(row.type, FONTS.fieldType, typeW + 1),
+        font: FONTS.fieldType,
+        fill: color(TEXT.muted),
+      });
+    }
+  }
 };
 
 // -----------------------------------------------------------------------------
@@ -264,6 +479,16 @@ export const drawApiCardOnCanvas = (
     context.textAlign = "left";
     context.textBaseline = "alphabetic";
     for (const p of layoutApiCard(element, data, opts)) {
+      if (p.type === "path") {
+        context.strokeStyle = p.stroke;
+        context.lineWidth = p.width;
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        if (typeof Path2D !== "undefined") {
+          context.stroke(new Path2D(p.d));
+        }
+        continue;
+      }
       context.fillStyle = p.fill;
       if (p.type === "rect") {
         context.beginPath();
@@ -319,7 +544,16 @@ export const appendApiCardToSvg = (
     g.setAttribute("opacity", `${element.opacity / 100}`);
   }
   for (const p of layoutApiCard(element, data, opts)) {
-    if (p.type === "rect") {
+    if (p.type === "path") {
+      const path = doc.createElementNS(SVG_NS, "path");
+      path.setAttribute("d", p.d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", p.stroke);
+      path.setAttribute("stroke-width", num(p.width));
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      g.appendChild(path);
+    } else if (p.type === "rect") {
       const rect = doc.createElementNS(SVG_NS, "rect");
       rect.setAttribute("x", num(p.x));
       rect.setAttribute("y", num(p.y));

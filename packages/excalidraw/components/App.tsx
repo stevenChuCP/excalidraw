@@ -1,4 +1,6 @@
 import clsx from "clsx";
+// flowapi: elements drawn from text are pinned
+import { isPinnedElement, keepMovable } from "@flowapi/card";
 import throttle from "lodash.throttle";
 import React, { useContext } from "react";
 import { flushSync } from "react-dom";
@@ -5424,7 +5426,15 @@ class App extends React.Component<AppProps, AppState> {
         const frameArrowIds = getFrameArrowIdsToReattach(selectedElements);
         // arrows bound to unselected elements are moved only by the selected
         // ones they're bound to (if any), unless their frame moves them
-        const movedElements = selectedElements.filter(
+        // flowapi: pinned elements move only with their frame
+        const movedElements = keepMovable(
+          selectedElements,
+          new Set(
+            selectedElements
+              .filter((e) => isFrameLikeElement(e))
+              .map((e) => e.id),
+          ),
+        ).filter(
           (element) =>
             !isBindingElement(element) ||
             frameArrowIds.has(element.id) ||
@@ -5486,7 +5496,11 @@ class App extends React.Component<AppProps, AppState> {
         event.preventDefault();
       } else if (event.key === KEYS.ENTER) {
         const selectedElements = this.scene.getSelectedElements(this.state);
-        if (selectedElements.length === 1) {
+        // flowapi: elements drawn from text are not edited on the canvas
+        if (
+          selectedElements.length === 1 &&
+          !isPinnedElement(selectedElements[0])
+        ) {
           const selectedElement = selectedElements[0];
           if (event[KEYS.CTRL_OR_CMD] || isLineElement(selectedElement)) {
             if (isLinearElement(selectedElement)) {
@@ -6253,6 +6267,22 @@ class App extends React.Component<AppProps, AppState> {
       event,
       this.state,
     );
+
+    // flowapi: elements drawn from text (and their labels) are not edited on
+    // the canvas
+    const flowapiHit = this.getElementAtPosition(sceneX, sceneY, {
+      includeBoundTextElement: true,
+    });
+    if (
+      selectedElements.some((el) => isPinnedElement(el)) ||
+      isPinnedElement(flowapiHit) ||
+      (flowapiHit &&
+        isTextElement(flowapiHit) &&
+        flowapiHit.containerId &&
+        isPinnedElement(this.scene.getElement(flowapiHit.containerId)))
+    ) {
+      return;
+    }
 
     if (selectedElements.length === 1 && isLinearElement(selectedElements[0])) {
       const selectedLinearElement: ExcalidrawLinearElement =
